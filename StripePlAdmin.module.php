@@ -372,7 +372,19 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		if (!empty($tplNames)) {
 			$tplSelector = 'template=' . implode('|', array_map('trim', $tplNames));
 			$products = $pages->find("{$tplSelector}, sort=title, include=all");
+
+			// Filter: If a page has a parent whose template is also in the filter, hide the child
+			$filteredProducts = [];
 			foreach ($products as $p) {
+				// Check if parent exists and parent's template is in our template list
+				if ($p->parent && $p->parent->id > 0 && in_array($p->parent->template->name, $tplNames)) {
+					// Skip this child page, only show the parent
+					continue;
+				}
+				$filteredProducts[] = $p;
+			}
+
+			foreach ($filteredProducts as $p) {
 				$f->addOption($p->id, $p->title);
 			}
 		}
