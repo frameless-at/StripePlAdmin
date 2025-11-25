@@ -116,36 +116,25 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$tab1->add($f);
 
 		// Product filter templates
-		$f = $modules->get('InputfieldPageAutocomplete');
+		$f = $modules->get('InputfieldAsmSelect');
 		$f->name = 'productFilterTemplates';
 		$f->label = 'Product Templates for Filter';
 		$f->description = 'Select which templates should be available in the product filter dropdown. If empty, the templates from the main StripePaymentLinks module will be used automatically.';
 		$f->notes = 'Leave empty to automatically use product templates from StripePaymentLinks module.';
-		$f->parent_id = $modules->get('ProcessTemplate')->getPage()->id;
-		$f->labelFieldName = 'name';
-		$f->searchFields = 'name label';
-		$f->operator = '%=';
-		$f->findPagesSelector = 'id>0';
-		$f->maxSelectedItems = 0;
-		$f->useList = true;
-		$f->allowUnpub = true;
+
+		// Add all templates as options
+		$templates = wire('templates');
+		foreach ($templates as $tpl) {
+			if ($tpl->flags & Template::flagSystem) continue; // Skip system templates
+			$f->addOption($tpl->name, $tpl->getLabel() ?: $tpl->name);
+		}
 
 		// Pre-populate with main module templates if not set
 		if (empty($data['productFilterTemplates'])) {
 			$mainModule = $modules->get('StripePaymentLinks');
 			if ($mainModule) {
 				$tplNames = (array)($mainModule->productTemplateNames ?? []);
-				if (!empty($tplNames)) {
-					$templates = wire('templates');
-					$templateIds = [];
-					foreach ($tplNames as $tplName) {
-						$tpl = $templates->get(trim($tplName));
-						if ($tpl && $tpl->id) {
-							$templateIds[] = $tpl->id;
-						}
-					}
-					$f->value = $templateIds;
-				}
+				$f->value = array_map('trim', $tplNames);
 			}
 		} else {
 			$f->value = $data['productFilterTemplates'];
@@ -362,15 +351,9 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		// Product filter - use configured templates or fall back to main module
 		$tplNames = [];
 
-		// First check if we have configured templates
+		// First check if we have configured templates (stored as template names)
 		if (!empty($this->productFilterTemplates)) {
-			$templates = $this->wire('templates');
-			foreach ($this->productFilterTemplates as $tplId) {
-				$tpl = $templates->get((int)$tplId);
-				if ($tpl && $tpl->name) {
-					$tplNames[] = $tpl->name;
-				}
-			}
+			$tplNames = (array)$this->productFilterTemplates;
 		}
 
 		// Fall back to main module templates if none configured
