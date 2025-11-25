@@ -1524,15 +1524,13 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 		$userId = (int)$input->get('user_id');
 		if (!$userId) {
-			header('Content-Type: application/json');
-			echo json_encode(['error' => 'No user ID provided']);
+			echo '<p style="color:red;">No user ID provided</p>';
 			exit;
 		}
 
 		$user = $users->get($userId);
 		if (!$user || !$user->id) {
-			header('Content-Type: application/json');
-			echo json_encode(['error' => 'User not found']);
+			echo '<p style="color:red;">User not found</p>';
 			exit;
 		}
 
@@ -1594,6 +1592,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 					'type' => 'Purchase',
 					'status' => $status,
 					'period_end' => $periodEnd,
+					'timestamp' => $purchaseDate,
 				];
 			}
 
@@ -1652,18 +1651,42 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 						'type' => 'Renewal',
 						'status' => $status,
 						'period_end' => $periodEnd,
+						'timestamp' => $renewalDate,
 					];
 				}
 			}
 		}
 
-		// Sort by date descending
+		// Sort by timestamp descending
 		usort($purchasesData, function($a, $b) {
-			return strtotime($b['date']) <=> strtotime($a['date']);
+			return $b['timestamp'] <=> $a['timestamp'];
 		});
 
-		header('Content-Type: application/json');
-		echo json_encode(['purchases' => $purchasesData]);
+		// Render table using ProcessWire MarkupAdminDataTable
+		if (empty($purchasesData)) {
+			echo '<p>No purchases found for this customer.</p>';
+			exit;
+		}
+
+		$table = $this->modules->get('MarkupAdminDataTable');
+		$table->setEncodeEntities(false);
+		$table->setSortable(true);
+
+		// Header
+		$table->headerRow(['Date', 'Product', 'Type', 'Status', 'Period End']);
+
+		// Rows
+		foreach ($purchasesData as $purchase) {
+			$table->row([
+				$purchase['date'],
+				htmlspecialchars($purchase['product']),
+				$purchase['type'],
+				$purchase['status'],
+				$purchase['period_end'],
+			]);
+		}
+
+		echo $table->render();
 		exit;
 	}
 
@@ -1674,7 +1697,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$baseUrl = $this->page->url;
 		return <<<HTML
 		<div id="customer-purchases-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:10000;">
-			<div style="position:relative; top:50%; left:50%; transform:translate(-50%, -50%); background:white; padding:20px; max-width:900px; max-height:80vh; overflow:auto; border-radius:4px;">
+			<div style="position:relative; top:50%; left:50%; transform:translate(-50%, -50%); background:white; padding:20px; max-width:1000px; max-height:80vh; overflow:auto; border-radius:4px;">
 				<h2 id="customer-purchases-title">Customer Purchases</h2>
 				<div id="customer-purchases-content">Loading...</div>
 				<button onclick="document.getElementById('customer-purchases-modal').style.display='none'" class="ui-button">Close</button>
@@ -1691,30 +1714,10 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 				document.getElementById('customer-purchases-content').innerHTML = 'Loading...';
 				document.getElementById('customer-purchases-modal').style.display = 'block';
 
-				// Fetch purchases via AJAX
+				// Fetch purchases via AJAX (returns rendered HTML table)
 				fetch('{$baseUrl}customerPurchases/?user_id=' + userId)
-					.then(function(response) { return response.json(); })
-					.then(function(data) {
-						if (data.error) {
-							document.getElementById('customer-purchases-content').innerHTML = '<p style="color:red;">' + data.error + '</p>';
-							return;
-						}
-
-						var html = '<table class="AdminDataTable AdminDataList"><thead><tr>';
-						html += '<th>Date</th><th>Product</th><th>Type</th><th>Status</th><th>Period End</th>';
-						html += '</tr></thead><tbody>';
-
-						data.purchases.forEach(function(purchase) {
-							html += '<tr>';
-							html += '<td>' + purchase.date + '</td>';
-							html += '<td>' + purchase.product + '</td>';
-							html += '<td>' + purchase.type + '</td>';
-							html += '<td>' + purchase.status + '</td>';
-							html += '<td>' + purchase.period_end + '</td>';
-							html += '</tr>';
-						});
-
-						html += '</tbody></table>';
+					.then(function(response) { return response.text(); })
+					.then(function(html) {
 						document.getElementById('customer-purchases-content').innerHTML = html;
 					})
 					.catch(function(error) {
