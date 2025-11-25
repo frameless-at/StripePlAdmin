@@ -70,7 +70,6 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			'purchasesColumns' => ['user_email', 'purchase_date', 'product_titles', 'amount_total', 'payment_status'],
 			'productsColumns' => ['name', 'purchases', 'quantity', 'revenue', 'last_purchase'],
 			'itemsPerPage' => 25,
-			'productFilterTemplates' => [],
 		];
 	}
 
@@ -113,32 +112,6 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			$f->addOption($key, $col['label']);
 		}
 		$f->value = $data['purchasesColumns'] ?? $data['adminColumns'] ?? [];
-		$tab1->add($f);
-
-		// Product filter templates
-		$f = $modules->get('InputfieldAsmSelect');
-		$f->name = 'productFilterTemplates';
-		$f->label = 'Product Templates for Filter';
-		$f->description = 'Select which templates should be available in the product filter dropdown. If empty, the templates from the main StripePaymentLinks module will be used automatically.';
-		$f->notes = 'Leave empty to automatically use product templates from StripePaymentLinks module.';
-
-		// Add all templates as options
-		$templates = wire('templates');
-		foreach ($templates as $tpl) {
-			if ($tpl->flags & Template::flagSystem) continue; // Skip system templates
-			$f->addOption($tpl->name, $tpl->getLabel() ?: $tpl->name);
-		}
-
-		// Pre-populate with main module templates if not set
-		if (empty($data['productFilterTemplates'])) {
-			$mainModule = $modules->get('StripePaymentLinks');
-			if ($mainModule) {
-				$tplNames = (array)($mainModule->productTemplateNames ?? []);
-				$f->value = array_map('trim', $tplNames);
-			}
-		} else {
-			$f->value = $data['productFilterTemplates'];
-		}
 		$tab1->add($f);
 
 		$wrapper->add($tab1);
@@ -400,19 +373,9 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$f->collapsed = Inputfield::collapsedNever;
 		$form->add($f);
 
-		// Product filter - use configured templates or fall back to main module
-		$tplNames = [];
-
-		// First check if we have configured templates (stored as template names)
-		if (!empty($this->productFilterTemplates)) {
-			$tplNames = (array)$this->productFilterTemplates;
-		}
-
-		// Fall back to main module templates if none configured
-		if (empty($tplNames)) {
-			$mainModule = $modules->get('StripePaymentLinks');
-			$tplNames = (array)($mainModule->productTemplateNames ?? []);
-		}
+		// Product filter - get templates from main module
+		$mainModule = $modules->get('StripePaymentLinks');
+		$tplNames = (array)($mainModule->productTemplateNames ?? []);
 
 		/** @var InputfieldSelect $f */
 		$f = $modules->get('InputfieldSelect');
