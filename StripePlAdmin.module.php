@@ -373,10 +373,6 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$f->collapsed = Inputfield::collapsedNever;
 		$form->add($f);
 
-		// Product filter - get templates from main module
-		$mainModule = $modules->get('StripePaymentLinks');
-		$tplNames = (array)($mainModule->productTemplateNames ?? []);
-
 		/** @var InputfieldSelect $f */
 		$f = $modules->get('InputfieldSelect');
 		$f->name = 'filter_product';
@@ -384,26 +380,10 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$f->columnWidth = 25;
 		$f->addOption('', 'All Products');
 
-		// Collect all unique product options
+		// Collect all unique product options from actual purchases
 		$productOptions = [];
 
-		// 1. Add pages with selected templates
-		if (!empty($tplNames)) {
-			$tplSelector = 'template=' . implode('|', array_map('trim', $tplNames));
-			$templateProducts = $pages->find("{$tplSelector}, sort=title, include=all");
-
-			// Filter: If a page has a parent whose template is also in the filter, hide the child
-			foreach ($templateProducts as $p) {
-				// Check if parent exists and parent's template is in our template list
-				if ($p->parent && $p->parent->id > 0 && in_array($p->parent->template->name, $tplNames)) {
-					// Skip this child page, only show the parent
-					continue;
-				}
-				$productOptions[$p->id] = $p->title;
-			}
-		}
-
-		// 2. Add all products from actual purchases (both mapped and unmapped)
+		// Add all products from actual purchases (both mapped and unmapped)
 		$users = $this->wire('users');
 		foreach ($users->find("spl_purchases.count>0") as $user) {
 			foreach ($user->spl_purchases as $item) {
