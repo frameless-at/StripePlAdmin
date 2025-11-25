@@ -198,7 +198,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 		// Filters
 		$filterEmail = $sanitizer->email($input->get('filter_email'));
-		$filterProduct = (int)$input->get('filter_product');
+		$filterProduct = $sanitizer->text($input->get('filter_product'));
 		$filterDateFrom = $sanitizer->text($input->get('filter_from'));
 		$filterDateTo = $sanitizer->text($input->get('filter_to'));
 
@@ -229,8 +229,34 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 				// Product filter
 				if ($filterProduct) {
-					$productIds = (array)$item->meta('product_ids');
-					if (!in_array($filterProduct, array_map('intval', $productIds))) {
+					$found = false;
+
+					// Check if it's a page ID filter
+					if (is_numeric($filterProduct)) {
+						$productIds = (array)$item->meta('product_ids');
+						if (in_array((int)$filterProduct, array_map('intval', $productIds))) {
+							$found = true;
+						}
+					}
+					// Check if it's a stripe product name filter
+					elseif (strpos($filterProduct, 'stripe:') === 0) {
+						$searchName = substr($filterProduct, 7); // Remove "stripe:" prefix
+						$session = (array)$item->meta('stripe_session');
+						$lineItems = $session['line_items']['data'] ?? [];
+
+						foreach ($lineItems as $li) {
+							$productName = $li['price']['product']['name']
+								?? $li['description']
+								?? $li['price']['nickname']
+								?? '';
+							if ($productName === $searchName) {
+								$found = true;
+								break;
+							}
+						}
+					}
+
+					if (!$found) {
 						continue;
 					}
 				}
@@ -273,7 +299,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 		// Filters
 		$filterEmail = $sanitizer->email($input->get('filter_email'));
-		$filterProduct = (int)$input->get('filter_product');
+		$filterProduct = $sanitizer->text($input->get('filter_product'));
 		$filterDateFrom = $sanitizer->text($input->get('filter_from'));
 		$filterDateTo = $sanitizer->text($input->get('filter_to'));
 
@@ -289,8 +315,34 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 				if ($filterDateTo && ($ts = strtotime($filterDateTo . ' 23:59:59')) && $purchaseDate > $ts) continue;
 
 				if ($filterProduct) {
-					$productIds = (array)$item->meta('product_ids');
-					if (!in_array($filterProduct, array_map('intval', $productIds))) continue;
+					$found = false;
+
+					// Check if it's a page ID filter
+					if (is_numeric($filterProduct)) {
+						$productIds = (array)$item->meta('product_ids');
+						if (in_array((int)$filterProduct, array_map('intval', $productIds))) {
+							$found = true;
+						}
+					}
+					// Check if it's a stripe product name filter
+					elseif (strpos($filterProduct, 'stripe:') === 0) {
+						$searchName = substr($filterProduct, 7); // Remove "stripe:" prefix
+						$session = (array)$item->meta('stripe_session');
+						$lineItems = $session['line_items']['data'] ?? [];
+
+						foreach ($lineItems as $li) {
+							$productName = $li['price']['product']['name']
+								?? $li['description']
+								?? $li['price']['nickname']
+								?? '';
+							if ($productName === $searchName) {
+								$found = true;
+								break;
+							}
+						}
+					}
+
+					if (!$found) continue;
 				}
 
 				$allPurchases[] = ['user' => $user, 'item' => $item, 'date' => $purchaseDate];
@@ -328,7 +380,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	/**
 	 * Render filter form
 	 */
-	protected function renderFilterForm(string $email, int $product, string $from, string $to): string {
+	protected function renderFilterForm(string $email, string $product, string $from, string $to): string {
 		$pages = $this->wire('pages');
 		$modules = $this->wire('modules');
 
@@ -369,24 +421,80 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$f->columnWidth = 25;
 		$f->addOption('', 'All Products');
 
+		// Collect all unique product options
+		$productOptions = [];
+
+		// 1. Add pages with selected templates
 		if (!empty($tplNames)) {
 			$tplSelector = 'template=' . implode('|', array_map('trim', $tplNames));
-			$products = $pages->find("{$tplSelector}, sort=title, include=all");
+			$templateProducts = $pages->find("{$tplSelector}, sort=title, include=all");
 
 			// Filter: If a page has a parent whose template is also in the filter, hide the child
-			$filteredProducts = [];
-			foreach ($products as $p) {
+			foreach ($templateProducts as $p) {
 				// Check if parent exists and parent's template is in our template list
 				if ($p->parent && $p->parent->id > 0 && in_array($p->parent->template->name, $tplNames)) {
 					// Skip this child page, only show the parent
 					continue;
 				}
-				$filteredProducts[] = $p;
+				$productOptions[$p->id] = $p->title;
 			}
+		}
 
-			foreach ($filteredProducts as $p) {
-				$f->addOption($p->id, $p->title);
+		// 2. Add all products from actual purchases (both mapped and unmapped)
+		$users = $this->wire('users');
+		foreach ($users->find("spl_purchases.count>0") as $user) {
+			foreach ($user->spl_purchases as $item) {
+				$session = (array)$item->meta('stripe_session');
+				$lineItems = $session['line_items']['data'] ?? [];
+				$productIds = (array)$item->meta('product_ids');
+
+				// Process mapped products
+				foreach ($productIds as $pid) {
+					$pid = (int)$pid;
+					if ($pid === 0) continue;
+					$p = $pages->get($pid);
+					if ($p && $p->id) {
+						$productOptions[$p->id] = $p->title;
+					}
+				}
+
+				// Process unmapped products from line items
+				foreach ($lineItems as $li) {
+					$stripeProductId = $li['price']['product']['id'] ?? ($li['price']['product'] ?? '');
+					if (is_array($stripeProductId)) $stripeProductId = $stripeProductId['id'] ?? '';
+
+					$productName = $li['price']['product']['name']
+						?? $li['description']
+						?? $li['price']['nickname']
+						?? '';
+
+					if ($productName) {
+						// Check if this Stripe product is already mapped to a page
+						$isMapped = false;
+						foreach ($productIds as $pid) {
+							$pid = (int)$pid;
+							if ($pid === 0) continue;
+							$p = $pages->get($pid);
+							if ($p && $p->id && $p->hasField('stripe_product_id') && $p->stripe_product_id === $stripeProductId) {
+								$isMapped = true;
+								break;
+							}
+						}
+
+						// Only add unmapped products with special identifier
+						if (!$isMapped) {
+							$key = 'stripe:' . $productName;
+							$productOptions[$key] = $productName;
+						}
+					}
+				}
 			}
+		}
+
+		// Sort by title and add to dropdown
+		asort($productOptions);
+		foreach ($productOptions as $value => $label) {
+			$f->addOption($value, $label);
 		}
 		$f->value = $product ?: '';
 		$form->add($f);
