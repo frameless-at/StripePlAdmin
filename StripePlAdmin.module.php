@@ -69,7 +69,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		return [
 			'purchasesColumns' => ['user_email', 'purchase_date', 'product_titles', 'amount_total', 'payment_status'],
 			'productsColumns' => ['name', 'purchases', 'quantity', 'revenue', 'last_purchase'],
-			'customersColumns' => ['name', 'email', 'total_purchases', 'total_revenue', 'first_purchase', 'last_activity', 'products'],
+			'customersColumns' => ['name', 'email', 'total_purchases', 'total_revenue', 'first_purchase', 'last_activity'],
 			'itemsPerPage' => 25,
 		];
 	}
@@ -98,7 +98,6 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		'total_revenue'   => ['label' => 'Total Revenue'],
 		'first_purchase'  => ['label' => 'First Purchase'],
 		'last_activity'   => ['label' => 'Last Activity'],
-		'products'        => ['label' => 'Products'],
 	];
 
 	/**
@@ -1295,13 +1294,11 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			$totalPurchases = 0;
 			$firstPurchase = PHP_INT_MAX;
 			$lastPurchase = 0;
-			$productsList = [];
 
 			foreach ($user->spl_purchases as $item) {
 				$purchaseDate = (int)$item->get('purchase_date');
 				$session = (array)$item->meta('stripe_session');
 				$lineItems = $session['line_items']['data'] ?? [];
-				$productIds = (array)$item->meta('product_ids');
 
 				$totalPurchases++;
 				if ($purchaseDate < $firstPurchase) $firstPurchase = $purchaseDate;
@@ -1319,15 +1316,6 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 						$totalRevenue += (int)($renewal['amount'] ?? 0);
 					}
 				}
-
-				// Collect product names
-				$productTitles = $this->computeProductTitles($user, $item);
-				if ($productTitles) {
-					$products = explode(', ', $productTitles);
-					foreach ($products as $prod) {
-						$productsList[$prod] = true;
-					}
-				}
 			}
 
 			if ($firstPurchase === PHP_INT_MAX) $firstPurchase = 0;
@@ -1340,7 +1328,6 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 				'total_revenue' => $totalRevenue,
 				'first_purchase' => $firstPurchase,
 				'last_purchase' => $lastPurchase,
-				'products' => array_keys($productsList),
 			];
 		}
 
@@ -1384,7 +1371,9 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 							$row[] = htmlspecialchars($data['email']);
 							break;
 						case 'total_purchases':
-							$row[] = $data['total_purchases'];
+							$purchasesHtml = '<a href="#" class="show-customer-purchases" data-user-id="' . $data['user']->id . '" data-user-name="' . htmlspecialchars($data['name']) . '">' .
+								$data['total_purchases'] . '</a>';
+							$row[] = $purchasesHtml;
 							break;
 						case 'total_revenue':
 							$currency = $data['user']->spl_purchases->first() ?
@@ -1398,11 +1387,6 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 						case 'last_activity':
 							$days = $data['last_purchase'] ? floor((time() - $data['last_purchase']) / 86400) : '-';
 							$row[] = $days !== '-' ? $days . ' days ago' : '-';
-							break;
-						case 'products':
-							$productsHtml = '<a href="#" class="show-customer-products" data-user-id="' . $data['user']->id . '">' .
-								count($data['products']) . ' products</a>';
-							$row[] = $productsHtml;
 							break;
 						default:
 							$row[] = '';
@@ -1438,7 +1422,6 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			$totalPurchases = 0;
 			$firstPurchase = PHP_INT_MAX;
 			$lastPurchase = 0;
-			$productsList = [];
 
 			foreach ($user->spl_purchases as $item) {
 				$purchaseDate = (int)$item->get('purchase_date');
@@ -1459,14 +1442,6 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 						$totalRevenue += (int)($renewal['amount'] ?? 0);
 					}
 				}
-
-				$productTitles = $this->computeProductTitles($user, $item);
-				if ($productTitles) {
-					$products = explode(', ', $productTitles);
-					foreach ($products as $prod) {
-						$productsList[$prod] = true;
-					}
-				}
 			}
 
 			if ($firstPurchase === PHP_INT_MAX) $firstPurchase = 0;
@@ -1479,7 +1454,6 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 				'total_revenue' => $totalRevenue,
 				'first_purchase' => $firstPurchase,
 				'last_purchase' => $lastPurchase,
-				'products' => array_keys($productsList),
 			];
 		}
 
@@ -1529,9 +1503,6 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 						$days = $data['last_purchase'] ? floor((time() - $data['last_purchase']) / 86400) : '';
 						$row[] = $days !== '' ? $days . ' days ago' : '';
 						break;
-					case 'products':
-						$row[] = implode(', ', $data['products']);
-						break;
 					default:
 						$row[] = '';
 				}
@@ -1544,24 +1515,211 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	}
 
 	/**
-	 * Render modal placeholder for customer products
+	 * AJAX endpoint to get customer purchases
+	 */
+	public function ___executeCustomerPurchases(): void {
+		$input = $this->wire('input');
+		$users = $this->wire('users');
+		$pages = $this->wire('pages');
+
+		$userId = (int)$input->get('user_id');
+		if (!$userId) {
+			header('Content-Type: application/json');
+			echo json_encode(['error' => 'No user ID provided']);
+			exit;
+		}
+
+		$user = $users->get($userId);
+		if (!$user || !$user->id) {
+			header('Content-Type: application/json');
+			echo json_encode(['error' => 'User not found']);
+			exit;
+		}
+
+		$purchasesData = [];
+
+		foreach ($user->spl_purchases as $item) {
+			$purchaseDate = (int)$item->get('purchase_date');
+			$session = (array)$item->meta('stripe_session');
+			$lineItems = $session['line_items']['data'] ?? [];
+			$productIds = (array)$item->meta('product_ids');
+
+			// Process initial purchase items
+			foreach ($lineItems as $li) {
+				$stripeProductId = $li['price']['product']['id'] ?? ($li['price']['product'] ?? '');
+				if (is_array($stripeProductId)) $stripeProductId = $stripeProductId['id'] ?? '';
+
+				$productName = $li['price']['product']['name']
+					?? $li['description']
+					?? $li['price']['nickname']
+					?? 'Unknown';
+
+				// Find mapped page
+				$pageId = 0;
+				foreach ($productIds as $pid) {
+					$pid = (int)$pid;
+					if ($pid === 0) continue;
+					$p = $pages->get($pid);
+					if ($p && $p->id && $p->hasField('stripe_product_id') && $p->stripe_product_id === $stripeProductId) {
+						$pageId = $pid;
+						$productName = $p->title;
+						break;
+					}
+				}
+
+				// Get subscription status
+				$periodEndMap = (array)$item->meta('period_end_map');
+				$status = '-';
+				$periodEnd = '-';
+
+				$scopeKey = $pageId ?: ('0#' . $stripeProductId);
+				if (isset($periodEndMap[$scopeKey])) {
+					$periodEndTs = (int)$periodEndMap[$scopeKey];
+					$periodEnd = $periodEndTs ? date('Y-m-d', $periodEndTs) : '-';
+
+					if (isset($periodEndMap[$scopeKey . '_canceled'])) {
+						$status = 'Canceled';
+					} elseif (isset($periodEndMap[$scopeKey . '_paused'])) {
+						$status = 'Paused';
+					} elseif ($periodEndTs < time()) {
+						$status = 'Expired';
+					} else {
+						$status = 'Active';
+					}
+				}
+
+				$purchasesData[] = [
+					'date' => date('Y-m-d H:i', $purchaseDate),
+					'product' => $productName,
+					'type' => 'Purchase',
+					'status' => $status,
+					'period_end' => $periodEnd,
+				];
+			}
+
+			// Process renewals
+			$renewals = (array)$item->meta('renewals');
+			foreach ($renewals as $scopeKey => $scopeRenewals) {
+				// Determine product name from scope key
+				$productName = 'Unknown';
+				if (is_numeric($scopeKey) && (int)$scopeKey > 0) {
+					$p = $pages->get((int)$scopeKey);
+					if ($p && $p->id) {
+						$productName = $p->title;
+					}
+				} elseif (strpos($scopeKey, '0#') === 0) {
+					$stripeProductId = substr($scopeKey, 2);
+					// Try to find in line items
+					foreach ($lineItems as $li) {
+						$liStripeId = $li['price']['product']['id'] ?? ($li['price']['product'] ?? '');
+						if (is_array($liStripeId)) $liStripeId = $liStripeId['id'] ?? '';
+						if ($liStripeId === $stripeProductId) {
+							$productName = $li['price']['product']['name']
+								?? $li['description']
+								?? $li['price']['nickname']
+								?? 'Unknown';
+							break;
+						}
+					}
+				}
+
+				foreach ((array)$scopeRenewals as $renewal) {
+					$renewalDate = (int)($renewal['date'] ?? 0);
+
+					// Get subscription status
+					$periodEndMap = (array)$item->meta('period_end_map');
+					$status = '-';
+					$periodEnd = '-';
+
+					if (isset($periodEndMap[$scopeKey])) {
+						$periodEndTs = (int)$periodEndMap[$scopeKey];
+						$periodEnd = $periodEndTs ? date('Y-m-d', $periodEndTs) : '-';
+
+						if (isset($periodEndMap[$scopeKey . '_canceled'])) {
+							$status = 'Canceled';
+						} elseif (isset($periodEndMap[$scopeKey . '_paused'])) {
+							$status = 'Paused';
+						} elseif ($periodEndTs < time()) {
+							$status = 'Expired';
+						} else {
+							$status = 'Active';
+						}
+					}
+
+					$purchasesData[] = [
+						'date' => $renewalDate ? date('Y-m-d H:i', $renewalDate) : '-',
+						'product' => $productName,
+						'type' => 'Renewal',
+						'status' => $status,
+						'period_end' => $periodEnd,
+					];
+				}
+			}
+		}
+
+		// Sort by date descending
+		usort($purchasesData, function($a, $b) {
+			return strtotime($b['date']) <=> strtotime($a['date']);
+		});
+
+		header('Content-Type: application/json');
+		echo json_encode(['purchases' => $purchasesData]);
+		exit;
+	}
+
+	/**
+	 * Render modal placeholder for customer purchases
 	 */
 	protected function renderCustomerProductsModal(): string {
+		$baseUrl = $this->page->url;
 		return <<<HTML
-		<div id="customer-products-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:10000;">
-			<div style="position:relative; top:50%; left:50%; transform:translate(-50%, -50%); background:white; padding:20px; max-width:800px; max-height:80vh; overflow:auto; border-radius:4px;">
-				<h2>Customer Products</h2>
-				<div id="customer-products-content"></div>
-				<button onclick="document.getElementById('customer-products-modal').style.display='none'" class="ui-button">Close</button>
+		<div id="customer-purchases-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:10000;">
+			<div style="position:relative; top:50%; left:50%; transform:translate(-50%, -50%); background:white; padding:20px; max-width:900px; max-height:80vh; overflow:auto; border-radius:4px;">
+				<h2 id="customer-purchases-title">Customer Purchases</h2>
+				<div id="customer-purchases-content">Loading...</div>
+				<button onclick="document.getElementById('customer-purchases-modal').style.display='none'" class="ui-button">Close</button>
 			</div>
 		</div>
 		<script>
 		document.addEventListener('click', function(e) {
-			if (e.target.classList.contains('show-customer-products')) {
+			if (e.target.classList.contains('show-customer-purchases')) {
 				e.preventDefault();
 				var userId = e.target.getAttribute('data-user-id');
-				// TODO: Load customer products via AJAX
-				document.getElementById('customer-products-modal').style.display = 'block';
+				var userName = e.target.getAttribute('data-user-name');
+
+				document.getElementById('customer-purchases-title').textContent = 'Purchases - ' + userName;
+				document.getElementById('customer-purchases-content').innerHTML = 'Loading...';
+				document.getElementById('customer-purchases-modal').style.display = 'block';
+
+				// Fetch purchases via AJAX
+				fetch('{$baseUrl}customerPurchases/?user_id=' + userId)
+					.then(function(response) { return response.json(); })
+					.then(function(data) {
+						if (data.error) {
+							document.getElementById('customer-purchases-content').innerHTML = '<p style="color:red;">' + data.error + '</p>';
+							return;
+						}
+
+						var html = '<table class="AdminDataTable AdminDataList"><thead><tr>';
+						html += '<th>Date</th><th>Product</th><th>Type</th><th>Status</th><th>Period End</th>';
+						html += '</tr></thead><tbody>';
+
+						data.purchases.forEach(function(purchase) {
+							html += '<tr>';
+							html += '<td>' + purchase.date + '</td>';
+							html += '<td>' + purchase.product + '</td>';
+							html += '<td>' + purchase.type + '</td>';
+							html += '<td>' + purchase.status + '</td>';
+							html += '<td>' + purchase.period_end + '</td>';
+							html += '</tr>';
+						});
+
+						html += '</tbody></table>';
+						document.getElementById('customer-purchases-content').innerHTML = html;
+					})
+					.catch(function(error) {
+						document.getElementById('customer-purchases-content').innerHTML = '<p style="color:red;">Error loading purchases</p>';
+					});
 			}
 		});
 		</script>
