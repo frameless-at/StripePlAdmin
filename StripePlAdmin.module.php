@@ -835,7 +835,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	 */
 	protected function renderTabs(string $active): string {
 		$baseUrl = $this->page->url;
-		$configUrl = $this->wire('config')->urls->admin . 'module/edit/?name=ProcessStripePlAdmin';
+		$configUrl = $this->wire('config')->urls->admin . 'module/edit/?name=' . $this->className();
 
 		$tabs = [
 			'purchases' => ['url' => $baseUrl, 'label' => 'Purchases'],
