@@ -69,6 +69,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		return [
 			'purchasesColumns' => ['user_email', 'purchase_date', 'product_titles', 'amount_total', 'payment_status'],
 			'productsColumns' => ['name', 'purchases', 'quantity', 'revenue', 'last_purchase'],
+			'customersColumns' => ['name', 'email', 'total_purchases', 'total_revenue', 'first_purchase', 'last_activity', 'products'],
 			'itemsPerPage' => 25,
 		];
 	}
@@ -85,6 +86,19 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		'renewals'        => ['label' => 'Renewals'],
 		'page_id'         => ['label' => 'Page ID'],
 		'stripe_id'       => ['label' => 'Stripe Product ID'],
+	];
+
+	/**
+	 * Available columns for Customers tab
+	 */
+	protected array $availableCustomersColumns = [
+		'name'            => ['label' => 'Name'],
+		'email'           => ['label' => 'Email'],
+		'total_purchases' => ['label' => 'Total Purchases'],
+		'total_revenue'   => ['label' => 'Total Revenue'],
+		'first_purchase'  => ['label' => 'First Purchase'],
+		'last_activity'   => ['label' => 'Last Activity'],
+		'products'        => ['label' => 'Products'],
 	];
 
 	/**
@@ -134,19 +148,37 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 		$wrapper->add($tab2);
 
-		// General settings
+		// Customers Tab
 		$tab3 = $modules->get('InputfieldFieldset');
-		$tab3->label = 'General';
+		$tab3->label = 'Customers';
 		$tab3->collapsed = Inputfield::collapsedNo;
+
+		$f = $modules->get('InputfieldAsmSelect');
+		$f->name = 'customersColumns';
+		$f->label = 'Columns for Customers tab';
+		$f->description = 'Select and order the columns to show in the customers table.';
+
+		foreach ($instance->availableCustomersColumns as $key => $col) {
+			$f->addOption($key, $col['label']);
+		}
+		$f->value = $data['customersColumns'] ?? [];
+		$tab3->add($f);
+
+		$wrapper->add($tab3);
+
+		// General settings
+		$tab4 = $modules->get('InputfieldFieldset');
+		$tab4->label = 'General';
+		$tab4->collapsed = Inputfield::collapsedNo;
 
 		$f = $modules->get('InputfieldInteger');
 		$f->name = 'itemsPerPage';
 		$f->label = 'Items per page';
 		$f->value = $data['itemsPerPage'];
 		$f->max = 500;
-		$tab3->add($f);
+		$tab4->add($f);
 
-		$wrapper->add($tab3);
+		$wrapper->add($tab4);
 
 		return $wrapper;
 	}
@@ -903,6 +935,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$tabs = [
 			'purchases' => ['url' => $baseUrl, 'label' => 'Purchases'],
 			'products' => ['url' => $baseUrl . 'products/', 'label' => 'Products'],
+			'customers' => ['url' => $baseUrl . 'customers/', 'label' => 'Customers'],
 		];
 
 		$out = "<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:20px'>";
@@ -1239,5 +1272,299 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 		fclose($fp);
 		exit;
+	}
+
+	/**
+	 * Customers overview - aggregated by customer
+	 */
+	public function ___executeCustomers(): string {
+		$this->headline('Customers Overview');
+		$this->browserTitle('Customers');
+
+		$out = $this->renderTabs('customers');
+
+		$input = $this->wire('input');
+		$users = $this->wire('users');
+		$pages = $this->wire('pages');
+
+		// Aggregate data per customer
+		$customerData = [];
+
+		foreach ($users->find("spl_purchases.count>0") as $user) {
+			$totalRevenue = 0;
+			$totalPurchases = 0;
+			$firstPurchase = PHP_INT_MAX;
+			$lastPurchase = 0;
+			$productsList = [];
+
+			foreach ($user->spl_purchases as $item) {
+				$purchaseDate = (int)$item->get('purchase_date');
+				$session = (array)$item->meta('stripe_session');
+				$lineItems = $session['line_items']['data'] ?? [];
+				$productIds = (array)$item->meta('product_ids');
+
+				$totalPurchases++;
+				if ($purchaseDate < $firstPurchase) $firstPurchase = $purchaseDate;
+				if ($purchaseDate > $lastPurchase) $lastPurchase = $purchaseDate;
+
+				// Calculate revenue from line items
+				foreach ($lineItems as $li) {
+					$totalRevenue += (int)($li['amount_total'] ?? 0);
+				}
+
+				// Add renewals
+				$renewals = (array)$item->meta('renewals');
+				foreach ($renewals as $scopeRenewals) {
+					foreach ((array)$scopeRenewals as $renewal) {
+						$totalRevenue += (int)($renewal['amount'] ?? 0);
+					}
+				}
+
+				// Collect product names
+				$productTitles = $this->computeProductTitles($user, $item);
+				if ($productTitles) {
+					$products = explode(', ', $productTitles);
+					foreach ($products as $prod) {
+						$productsList[$prod] = true;
+					}
+				}
+			}
+
+			if ($firstPurchase === PHP_INT_MAX) $firstPurchase = 0;
+
+			$customerData[] = [
+				'user' => $user,
+				'name' => $user->title ?: $user->name,
+				'email' => $user->email,
+				'total_purchases' => $totalPurchases,
+				'total_revenue' => $totalRevenue,
+				'first_purchase' => $firstPurchase,
+				'last_purchase' => $lastPurchase,
+				'products' => array_keys($productsList),
+			];
+		}
+
+		// Sort by total revenue descending
+		usort($customerData, fn($a, $b) => $b['total_revenue'] <=> $a['total_revenue']);
+
+		// Get configured columns
+		$columns = $this->customersColumns ?: self::getDefaults()['customersColumns'];
+		$perPage = (int)($this->itemsPerPage ?: 25);
+
+		// Pagination
+		$total = count($customerData);
+		$page = max(1, (int)$input->get('pg'));
+		$offset = ($page - 1) * $perPage;
+		$paginatedData = array_slice($customerData, $offset, $perPage);
+
+		// Render table
+		if (empty($customerData)) {
+			$out .= "<p>No customers found.</p>";
+		} else {
+			$table = $this->modules->get('MarkupAdminDataTable');
+			$table->setEncodeEntities(false);
+			$table->setSortable(true);
+
+			// Dynamic header
+			$headers = [];
+			foreach ($columns as $col) {
+				$headers[] = $this->availableCustomersColumns[$col]['label'] ?? $col;
+			}
+			$table->headerRow($headers);
+
+			// Dynamic rows
+			foreach ($paginatedData as $data) {
+				$row = [];
+				foreach ($columns as $col) {
+					switch ($col) {
+						case 'name':
+							$row[] = htmlspecialchars($data['name']);
+							break;
+						case 'email':
+							$row[] = htmlspecialchars($data['email']);
+							break;
+						case 'total_purchases':
+							$row[] = $data['total_purchases'];
+							break;
+						case 'total_revenue':
+							$currency = $data['user']->spl_purchases->first() ?
+								strtoupper(((array)$data['user']->spl_purchases->first()->meta('stripe_session'))['currency'] ?? 'EUR') :
+								'EUR';
+							$row[] = $this->formatPrice($data['total_revenue'], $currency);
+							break;
+						case 'first_purchase':
+							$row[] = $data['first_purchase'] ? date('Y-m-d', $data['first_purchase']) : '-';
+							break;
+						case 'last_activity':
+							$days = $data['last_purchase'] ? floor((time() - $data['last_purchase']) / 86400) : '-';
+							$row[] = $days !== '-' ? $days . ' days ago' : '-';
+							break;
+						case 'products':
+							$productsHtml = '<a href="#" class="show-customer-products" data-user-id="' . $data['user']->id . '">' .
+								count($data['products']) . ' products</a>';
+							$row[] = $productsHtml;
+							break;
+						default:
+							$row[] = '';
+					}
+				}
+				$table->row($row);
+			}
+
+			$out .= "<div style='margin-top:-1px'>" . $table->render() . "</div>";
+		}
+
+		// Pagination and Export
+		$out .= $this->renderPaginationRow($total, $perPage, $page, 'exportCustomers');
+
+		// Add modal placeholder
+		$out .= $this->renderCustomerProductsModal();
+
+		return $out;
+	}
+
+	/**
+	 * Export customers to CSV
+	 */
+	public function ___executeExportCustomers(): void {
+		$users = $this->wire('users');
+		$pages = $this->wire('pages');
+
+		// Aggregate data (same as executeCustomers)
+		$customerData = [];
+
+		foreach ($users->find("spl_purchases.count>0") as $user) {
+			$totalRevenue = 0;
+			$totalPurchases = 0;
+			$firstPurchase = PHP_INT_MAX;
+			$lastPurchase = 0;
+			$productsList = [];
+
+			foreach ($user->spl_purchases as $item) {
+				$purchaseDate = (int)$item->get('purchase_date');
+				$session = (array)$item->meta('stripe_session');
+				$lineItems = $session['line_items']['data'] ?? [];
+
+				$totalPurchases++;
+				if ($purchaseDate < $firstPurchase) $firstPurchase = $purchaseDate;
+				if ($purchaseDate > $lastPurchase) $lastPurchase = $purchaseDate;
+
+				foreach ($lineItems as $li) {
+					$totalRevenue += (int)($li['amount_total'] ?? 0);
+				}
+
+				$renewals = (array)$item->meta('renewals');
+				foreach ($renewals as $scopeRenewals) {
+					foreach ((array)$scopeRenewals as $renewal) {
+						$totalRevenue += (int)($renewal['amount'] ?? 0);
+					}
+				}
+
+				$productTitles = $this->computeProductTitles($user, $item);
+				if ($productTitles) {
+					$products = explode(', ', $productTitles);
+					foreach ($products as $prod) {
+						$productsList[$prod] = true;
+					}
+				}
+			}
+
+			if ($firstPurchase === PHP_INT_MAX) $firstPurchase = 0;
+
+			$customerData[] = [
+				'user' => $user,
+				'name' => $user->title ?: $user->name,
+				'email' => $user->email,
+				'total_purchases' => $totalPurchases,
+				'total_revenue' => $totalRevenue,
+				'first_purchase' => $firstPurchase,
+				'last_purchase' => $lastPurchase,
+				'products' => array_keys($productsList),
+			];
+		}
+
+		usort($customerData, fn($a, $b) => $b['total_revenue'] <=> $a['total_revenue']);
+
+		$columns = $this->customersColumns ?: self::getDefaults()['customersColumns'];
+
+		// Output CSV
+		header('Content-Type: text/csv; charset=utf-8');
+		header('Content-Disposition: attachment; filename="customers-' . date('Y-m-d-His') . '.csv"');
+
+		$fp = fopen('php://output', 'w');
+
+		// Header row
+		$headers = [];
+		foreach ($columns as $col) {
+			$headers[] = $this->availableCustomersColumns[$col]['label'] ?? $col;
+		}
+		fputcsv($fp, $headers);
+
+		// Data rows
+		foreach ($customerData as $data) {
+			$row = [];
+			foreach ($columns as $col) {
+				switch ($col) {
+					case 'name':
+						$row[] = $data['name'];
+						break;
+					case 'email':
+						$row[] = $data['email'];
+						break;
+					case 'total_purchases':
+						$row[] = $data['total_purchases'];
+						break;
+					case 'total_revenue':
+						$currency = $data['user']->spl_purchases->first() ?
+							strtoupper(((array)$data['user']->spl_purchases->first()->meta('stripe_session'))['currency'] ?? 'EUR') :
+							'EUR';
+						$cents = $data['total_revenue'];
+						$symbol = ($currency === 'EUR') ? '€' : $currency;
+						$row[] = $symbol . ' ' . number_format($cents / 100, 2, ',', '');
+						break;
+					case 'first_purchase':
+						$row[] = $data['first_purchase'] ? date('Y-m-d', $data['first_purchase']) : '';
+						break;
+					case 'last_activity':
+						$days = $data['last_purchase'] ? floor((time() - $data['last_purchase']) / 86400) : '';
+						$row[] = $days !== '' ? $days . ' days ago' : '';
+						break;
+					case 'products':
+						$row[] = implode(', ', $data['products']);
+						break;
+					default:
+						$row[] = '';
+				}
+			}
+			fputcsv($fp, $row);
+		}
+
+		fclose($fp);
+		exit;
+	}
+
+	/**
+	 * Render modal placeholder for customer products
+	 */
+	protected function renderCustomerProductsModal(): string {
+		return <<<HTML
+		<div id="customer-products-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:10000;">
+			<div style="position:relative; top:50%; left:50%; transform:translate(-50%, -50%); background:white; padding:20px; max-width:800px; max-height:80vh; overflow:auto; border-radius:4px;">
+				<h2>Customer Products</h2>
+				<div id="customer-products-content"></div>
+				<button onclick="document.getElementById('customer-products-modal').style.display='none'" class="ui-button">Close</button>
+			</div>
+		</div>
+		<script>
+		document.addEventListener('click', function(e) {
+			if (e.target.classList.contains('show-customer-products')) {
+				e.preventDefault();
+				var userId = e.target.getAttribute('data-user-id');
+				// TODO: Load customer products via AJAX
+				document.getElementById('customer-products-modal').style.display = 'block';
+			}
+		});
+		</script>
+		HTML;
 	}
 }
