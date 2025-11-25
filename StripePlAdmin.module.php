@@ -1535,12 +1535,15 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		}
 
 		$purchasesData = [];
+		$purchaseCount = 0;
+		$renewalCount = 0;
 
 		foreach ($user->spl_purchases as $item) {
 			$purchaseDate = (int)$item->get('purchase_date');
 			$session = (array)$item->meta('stripe_session');
 			$lineItems = $session['line_items']['data'] ?? [];
 			$productIds = (array)$item->meta('product_ids');
+			$currency = strtoupper($session['currency'] ?? 'EUR');
 
 			// Process initial purchase items
 			foreach ($lineItems as $li) {
@@ -1586,6 +1589,9 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 					}
 				}
 
+				$amount = (int)($li['amount_total'] ?? 0);
+				$quantity = (int)($li['quantity'] ?? 1);
+
 				$purchasesData[] = [
 					'date' => date('Y-m-d H:i', $purchaseDate),
 					'product' => $productName,
@@ -1593,7 +1599,12 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 					'status' => $status,
 					'period_end' => $periodEnd,
 					'timestamp' => $purchaseDate,
+					'amount' => $amount,
+					'currency' => $currency,
+					'quantity' => $quantity,
 				];
+
+				$purchaseCount++;
 			}
 
 			// Process renewals
@@ -1624,6 +1635,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 				foreach ((array)$scopeRenewals as $renewal) {
 					$renewalDate = (int)($renewal['date'] ?? 0);
+					$renewalAmount = (int)($renewal['amount'] ?? 0);
 
 					// Get subscription status
 					$periodEndMap = (array)$item->meta('period_end_map');
@@ -1652,7 +1664,12 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 						'status' => $status,
 						'period_end' => $periodEnd,
 						'timestamp' => $renewalDate,
+						'amount' => $renewalAmount,
+						'currency' => $currency,
+						'quantity' => 1,
 					];
+
+					$renewalCount++;
 				}
 			}
 		}
@@ -1662,31 +1679,44 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			return $b['timestamp'] <=> $a['timestamp'];
 		});
 
-		// Render table using ProcessWire MarkupAdminDataTable
 		if (empty($purchasesData)) {
 			echo '<p>No purchases found for this customer.</p>';
 			exit;
 		}
 
+		// Build title with counts
+		$userName = $user->title ?: $user->name;
+		$title = "Purchases - {$userName} ({$purchaseCount} Purchases, {$renewalCount} Renewals)";
+
+		// Render table using ProcessWire MarkupAdminDataTable
 		$table = $this->modules->get('MarkupAdminDataTable');
 		$table->setEncodeEntities(false);
 		$table->setSortable(true);
+		$table->setClass('uk-table-divider uk-table-small');
 
 		// Header
-		$table->headerRow(['Date', 'Product', 'Type', 'Status', 'Period End']);
+		$table->headerRow(['Date', 'Product', 'Quantity', 'Amount', 'Type', 'Status', 'Period End']);
 
 		// Rows
 		foreach ($purchasesData as $purchase) {
 			$table->row([
 				$purchase['date'],
 				htmlspecialchars($purchase['product']),
+				$purchase['quantity'],
+				$this->formatPrice($purchase['amount'], $purchase['currency']),
 				$purchase['type'],
 				$purchase['status'],
 				$purchase['period_end'],
 			]);
 		}
 
-		echo $table->render();
+		// Output title + table wrapped in UIkit structure
+		$out = '<h3 class="uk-modal-title">' . htmlspecialchars($title) . '</h3>';
+		$out .= '<div class="pw-table-responsive uk-overflow-auto pw-table-sortable">';
+		$out .= $table->render();
+		$out .= '</div>';
+
+		echo $out;
 		exit;
 	}
 
@@ -1695,12 +1725,20 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	 */
 	protected function renderCustomerProductsModal(): string {
 		$baseUrl = $this->page->url;
+		$modalId = 'modal_' . uniqid();
 		return <<<HTML
-		<div id="customer-purchases-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:10000;">
-			<div style="position:relative; top:50%; left:50%; transform:translate(-50%, -50%); background:white; padding:20px; max-width:1000px; max-height:80vh; overflow:auto; border-radius:4px;">
-				<h2 id="customer-purchases-title">Customer Purchases</h2>
-				<div id="customer-purchases-content">Loading...</div>
-				<button onclick="document.getElementById('customer-purchases-modal').style.display='none'" class="ui-button">Close</button>
+		<div id="{$modalId}" class="uk-modal-container uk-modal" uk-modal="" tabindex="-1">
+			<div class="uk-modal-dialog uk-modal-body" role="dialog" aria-modal="true">
+				<button class="uk-modal-close-default uk-icon uk-close" type="button" uk-close="" aria-label="Close">
+					<svg width="14" height="14" viewBox="0 0 14 14">
+						<line fill="none" stroke="#000" stroke-width="1.1" x1="1" y1="1" x2="13" y2="13"></line>
+						<line fill="none" stroke="#000" stroke-width="1.1" x1="13" y1="1" x2="1" y2="13"></line>
+					</svg>
+				</button>
+				<div id="customer-purchases-content">
+					<h3 class="uk-modal-title">Loading...</h3>
+					<p>Loading purchases...</p>
+				</div>
 			</div>
 		</div>
 		<script>
@@ -1708,20 +1746,21 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			if (e.target.classList.contains('show-customer-purchases')) {
 				e.preventDefault();
 				var userId = e.target.getAttribute('data-user-id');
-				var userName = e.target.getAttribute('data-user-name');
 
-				document.getElementById('customer-purchases-title').textContent = 'Purchases - ' + userName;
-				document.getElementById('customer-purchases-content').innerHTML = 'Loading...';
-				document.getElementById('customer-purchases-modal').style.display = 'block';
+				// Show modal
+				UIkit.modal('#{$modalId}').show();
 
-				// Fetch purchases via AJAX (returns rendered HTML table)
+				// Set loading state
+				document.getElementById('customer-purchases-content').innerHTML = '<h3 class="uk-modal-title">Loading...</h3><p>Loading purchases...</p>';
+
+				// Fetch purchases via AJAX (returns title + table)
 				fetch('{$baseUrl}customerPurchases/?user_id=' + userId)
 					.then(function(response) { return response.text(); })
 					.then(function(html) {
 						document.getElementById('customer-purchases-content').innerHTML = html;
 					})
 					.catch(function(error) {
-						document.getElementById('customer-purchases-content').innerHTML = '<p style="color:red;">Error loading purchases</p>';
+						document.getElementById('customer-purchases-content').innerHTML = '<h3 class="uk-modal-title">Error</h3><p style="color:red;">Error loading purchases</p>';
 					});
 			}
 		});
