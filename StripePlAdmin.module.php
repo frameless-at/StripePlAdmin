@@ -1,12 +1,12 @@
 <?php namespace ProcessWire;
 
 /**
- * ProcessStripePlAdmin
+ * Stripe Payment Links Admin
  *
  * Admin page for viewing customer purchases with configurable columns.
  * Displays purchase metadata including Stripe session data.
  */
-class ProcessStripePlAdmin extends Process implements ConfigurableModule {
+class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 	public static function getModuleInfo(): array {
 		return [
@@ -18,8 +18,8 @@ class ProcessStripePlAdmin extends Process implements ConfigurableModule {
 			'requires'    => ['StripePaymentLinks'],
 			'page'        => [
 				'name'   => 'stripe-pl-admin',
-				'parent' => 'setup',
-				'title'  => 'Stripe Purchases',
+				'parent' => 'admin',
+				'title'  => 'Stripe PL Admin',
 			],
 		];
 	}
