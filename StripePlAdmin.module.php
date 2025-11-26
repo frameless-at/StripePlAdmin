@@ -185,7 +185,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	 * Main execute method - renders the purchases table
 	 */
 	public function ___execute(): string {
-		$this->headline('Customer Purchases');
+		$this->headline('Purchases Overview');
 		$this->browserTitle('Purchases');
 
 		// Tab navigation
