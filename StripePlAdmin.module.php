@@ -1712,9 +1712,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 		// Output title + table wrapped in UIkit structure
 		$out = '<h3 class="uk-modal-title">' . htmlspecialchars($title) . '</h3>';
-		$out .= '<div class="pw-table-responsive uk-overflow-auto pw-table-sortable">';
 		$out .= $table->render();
-		$out .= '</div>';
 
 		echo $out;
 		exit;
@@ -1729,12 +1727,6 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		return <<<HTML
 		<div id="{$modalId}" class="uk-modal-container uk-modal" uk-modal="" tabindex="-1">
 			<div class="uk-modal-dialog uk-modal-body" role="dialog" aria-modal="true">
-				<button class="uk-modal-close-default uk-icon uk-close" type="button" uk-close="" aria-label="Close">
-					<svg width="14" height="14" viewBox="0 0 14 14">
-						<line fill="none" stroke="#000" stroke-width="1.1" x1="1" y1="1" x2="13" y2="13"></line>
-						<line fill="none" stroke="#000" stroke-width="1.1" x1="13" y1="1" x2="1" y2="13"></line>
-					</svg>
-				</button>
 				<div id="customer-purchases-content">
 					<h3 class="uk-modal-title">Loading...</h3>
 					<p>Loading purchases...</p>
@@ -1758,6 +1750,12 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 					.then(function(response) { return response.text(); })
 					.then(function(html) {
 						document.getElementById('customer-purchases-content').innerHTML = html;
+
+						// Initialize tablesorter on the dynamically loaded table
+						var table = document.querySelector('#customer-purchases-content table');
+						if (table && typeof jQuery !== 'undefined' && jQuery.fn.tablesorter) {
+							jQuery(table).tablesorter();
+						}
 					})
 					.catch(function(error) {
 						document.getElementById('customer-purchases-content').innerHTML = '<h3 class="uk-modal-title">Error</h3><p style="color:red;">Error loading purchases</p>';
