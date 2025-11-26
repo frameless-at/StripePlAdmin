@@ -62,14 +62,30 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	];
 
 	/**
-	 * Default columns to show
+	 * Get translatable column labels
 	 */
-	public static function getDefaults(): array {
+	protected function getColumnLabels(): array {
 		return [
-			'purchasesColumns' => ['user_email', 'purchase_date', 'product_titles', 'amount_total', 'payment_status'],
-			'productsColumns' => ['name', 'purchases', 'quantity', 'revenue', 'last_purchase'],
-			'customersColumns' => ['name', 'email', 'total_purchases', 'total_revenue', 'first_purchase', 'last_activity'],
-			'itemsPerPage' => 25,
+			'user_email' => $this->_('User Email'),
+			'user_name' => $this->_('User Name'),
+			'purchase_date' => $this->_('Purchase Date'),
+			'purchase_lines' => $this->_('Purchase Lines'),
+			'session_id' => $this->_('Session ID'),
+			'customer_id' => $this->_('Customer ID'),
+			'customer_name' => $this->_('Customer Name'),
+			'payment_status' => $this->_('Payment Status'),
+			'currency' => $this->_('Currency'),
+			'amount_total' => $this->_('Amount Total'),
+			'subscription_id' => $this->_('Subscription ID'),
+			'shipping_name' => $this->_('Shipping Name'),
+			'shipping_address' => $this->_('Shipping Address'),
+			'product_ids' => $this->_('Product IDs'),
+			'product_titles' => $this->_('Product Titles'),
+			'subscription_status' => $this->_('Subscription Status'),
+			'period_end' => $this->_('Period End'),
+			'line_items_count' => $this->_('Items Count'),
+			'renewal_count' => $this->_('Renewal Count'),
+			'last_renewal' => $this->_('Last Renewal'),
 		];
 	}
 
@@ -88,6 +104,22 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	];
 
 	/**
+	 * Get translatable product column labels
+	 */
+	protected function getProductColumnLabels(): array {
+		return [
+			'name' => $this->_('Product Name'),
+			'purchases' => $this->_('Purchases'),
+			'quantity' => $this->_('Quantity'),
+			'revenue' => $this->_('Revenue'),
+			'last_purchase' => $this->_('Last Purchase'),
+			'renewals' => $this->_('Renewals'),
+			'page_id' => $this->_('Page ID'),
+			'stripe_id' => $this->_('Stripe Product ID'),
+		];
+	}
+
+	/**
 	 * Available columns for Customers tab
 	 */
 	protected array $availableCustomersColumns = [
@@ -100,6 +132,20 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	];
 
 	/**
+	 * Get translatable customer column labels
+	 */
+	protected function getCustomerColumnLabels(): array {
+		return [
+			'name' => $this->_('Name'),
+			'email' => $this->_('Email'),
+			'total_purchases' => $this->_('Total Purchases'),
+			'total_revenue' => $this->_('Total Revenue'),
+			'first_purchase' => $this->_('First Purchase'),
+			'last_activity' => $this->_('Last Activity'),
+		];
+	}
+
+	/**
 	 * Module configuration
 	 */
 	public static function getModuleConfigInputfields(array $data): InputfieldWrapper {
@@ -109,19 +155,23 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$defaults = self::getDefaults();
 		$data = array_merge($defaults, $data);
 
+		$instance = new self();
+		$columnLabels = $instance->getColumnLabels();
+		$productLabels = $instance->getProductColumnLabels();
+		$customerLabels = $instance->getCustomerColumnLabels();
+
 		// Purchases Tab
 		$tab1 = $modules->get('InputfieldFieldset');
-		$tab1->label = 'Purchases';
+		$tab1->label = $instance->_('Purchases');
 		$tab1->collapsed = Inputfield::collapsedNo;
 
 		$f = $modules->get('InputfieldAsmSelect');
 		$f->name = 'purchasesColumns';
-		$f->label = 'Columns for Purchases tab';
-		$f->description = 'Select and order the columns to show in the purchases table.';
+		$f->label = $instance->_('Columns for Purchases tab');
+		$f->description = $instance->_('Select and order the columns to show in the purchases table.');
 
-		$instance = new self();
 		foreach ($instance->availableColumns as $key => $col) {
-			$f->addOption($key, $col['label']);
+			$f->addOption($key, $columnLabels[$key] ?? $col['label']);
 		}
 		$f->value = $data['purchasesColumns'] ?? $data['adminColumns'] ?? [];
 		$tab1->add($f);
@@ -130,16 +180,16 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 		// Products Tab
 		$tab2 = $modules->get('InputfieldFieldset');
-		$tab2->label = 'Products';
+		$tab2->label = $instance->_('Products');
 		$tab2->collapsed = Inputfield::collapsedNo;
 
 		$f = $modules->get('InputfieldAsmSelect');
 		$f->name = 'productsColumns';
-		$f->label = 'Columns for Products tab';
-		$f->description = 'Select and order the columns to show in the products table.';
+		$f->label = $instance->_('Columns for Products tab');
+		$f->description = $instance->_('Select and order the columns to show in the products table.');
 
 		foreach ($instance->availableProductsColumns as $key => $col) {
-			$f->addOption($key, $col['label']);
+			$f->addOption($key, $productLabels[$key] ?? $col['label']);
 		}
 		$f->value = $data['productsColumns'] ?? [];
 		$tab2->add($f);
@@ -148,16 +198,16 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 		// Customers Tab
 		$tab3 = $modules->get('InputfieldFieldset');
-		$tab3->label = 'Customers';
+		$tab3->label = $instance->_('Customers');
 		$tab3->collapsed = Inputfield::collapsedNo;
 
 		$f = $modules->get('InputfieldAsmSelect');
 		$f->name = 'customersColumns';
-		$f->label = 'Columns for Customers tab';
-		$f->description = 'Select and order the columns to show in the customers table.';
+		$f->label = $instance->_('Columns for Customers tab');
+		$f->description = $instance->_('Select and order the columns to show in the customers table.');
 
 		foreach ($instance->availableCustomersColumns as $key => $col) {
-			$f->addOption($key, $col['label']);
+			$f->addOption($key, $customerLabels[$key] ?? $col['label']);
 		}
 		$f->value = $data['customersColumns'] ?? [];
 		$tab3->add($f);
@@ -166,12 +216,12 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 		// General settings
 		$tab4 = $modules->get('InputfieldFieldset');
-		$tab4->label = 'General';
+		$tab4->label = $instance->_('General');
 		$tab4->collapsed = Inputfield::collapsedNo;
 
 		$f = $modules->get('InputfieldInteger');
 		$f->name = 'itemsPerPage';
-		$f->label = 'Items per page';
+		$f->label = $instance->_('Items per page');
 		$f->value = $data['itemsPerPage'];
 		$f->max = 500;
 		$tab4->add($f);
@@ -185,8 +235,8 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	 * Main execute method - renders the purchases table
 	 */
 	public function ___execute(): string {
-		$this->headline('Purchases Overview');
-		$this->browserTitle('Purchases');
+		$this->headline($this->_('Purchases Overview'));
+		$this->browserTitle($this->_('Purchases'));
 
 		// Tab navigation
 		$out = $this->renderTabs('purchases');
@@ -362,8 +412,9 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 		// Header row
 		$headers = [];
+		$columnLabels = $this->getColumnLabels();
 		foreach ($columns as $col) {
-			$headers[] = $this->availableColumns[$col]['label'] ?? $col;
+			$headers[] = $columnLabels[$col] ?? $this->availableColumns[$col]['label'] ?? $col;
 		}
 		fputcsv($fp, $headers);
 
@@ -398,7 +449,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		/** @var InputfieldEmail $f */
 		$f = $modules->get('InputfieldEmail');
 		$f->name = 'filter_email';
-		$f->label = 'Email';
+		$f->label = $this->_('Email');
 		$f->columnWidth = 25;
 		$f->value = $email;
 		$f->collapsed = Inputfield::collapsedNever;
@@ -407,9 +458,9 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		/** @var InputfieldSelect $f */
 		$f = $modules->get('InputfieldSelect');
 		$f->name = 'filter_product';
-		$f->label = 'Product';
+		$f->label = $this->_('Product');
 		$f->columnWidth = 25;
-		$f->addOption('', 'All Products');
+		$f->addOption('', $this->_('All Products'));
 
 		// Collect all unique product options from actual purchases
 		$productOptions = [];
@@ -477,7 +528,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		/** @var InputfieldText $f */
 		$f = $modules->get('InputfieldText');
 		$f->name = 'filter_from';
-		$f->label = 'From';
+		$f->label = $this->_('From');
 		$f->attr('type', 'date');
 		$f->columnWidth = 15;
 		$f->value = $from;
@@ -487,7 +538,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		/** @var InputfieldText $f */
 		$f = $modules->get('InputfieldText');
 		$f->name = 'filter_to';
-		$f->label = 'To';
+		$f->label = $this->_('To');
 		$f->attr('type', 'date');
 		$f->columnWidth = 15;
 		$f->value = $to;
@@ -499,8 +550,8 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$f->name = 'buttons';
 		$f->label = ' ';
 		$f->columnWidth = 20;
-		$f->value = "<button type='submit' class='ui-button ui-state-default'><span class='ui-button-text'>Filter</span></button> ";
-		$f->value .= "<a href='{$this->page->url}' class='ui-button ui-state-default ui-priority-secondary'><span class='ui-button-text'>Reset</span></a>";
+		$f->value = "<button type='submit' class='ui-button ui-state-default'><span class='ui-button-text'>" . $this->_('Filter') . "</span></button> ";
+		$f->value .= "<a href='{$this->page->url}' class='ui-button ui-state-default ui-priority-secondary'><span class='ui-button-text'>" . $this->_('Reset') . "</span></a>";
 		$form->add($f);
 
 		return $form->render();
@@ -511,7 +562,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	 */
 	protected function renderTable(array $purchases, array $columns): string {
 		if (empty($purchases)) {
-			return "<p>No purchases found.</p>";
+			return "<p>" . $this->_('No purchases found.') . "</p>";
 		}
 
 		$table = $this->modules->get('MarkupAdminDataTable');
@@ -520,8 +571,9 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 		// Header
 		$headerRow = [];
+		$columnLabels = $this->getColumnLabels();
 		foreach ($columns as $col) {
-			$headerRow[] = $this->availableColumns[$col]['label'] ?? $col;
+			$headerRow[] = $columnLabels[$col] ?? $this->availableColumns[$col]['label'] ?? $col;
 		}
 		$table->headerRow($headerRow);
 
@@ -986,8 +1038,8 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	 * Products overview - aggregated by product
 	 */
 	public function ___executeProducts(): string {
-		$this->headline('Products Overview');
-		$this->browserTitle('Products');
+		$this->headline($this->_('Products Overview'));
+		$this->browserTitle($this->_('Products'));
 
 		$out = $this->renderTabs('products');
 
@@ -1093,7 +1145,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 		// Render table
 		if (empty($productData)) {
-			$out .= "<p>No products found.</p>";
+			$out .= "<p>" . $this->_('No products found.') . "</p>";
 		} else {
 			$table = $this->modules->get('MarkupAdminDataTable');
 			$table->setEncodeEntities(false);
@@ -1101,8 +1153,9 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 			// Dynamic header
 			$headers = [];
+			$productLabels = $this->getProductColumnLabels();
 			foreach ($columns as $col) {
-				$headers[] = $this->availableProductsColumns[$col]['label'] ?? $col;
+				$headers[] = $productLabels[$col] ?? $this->availableProductsColumns[$col]['label'] ?? $col;
 			}
 			$table->headerRow($headers);
 
@@ -1259,8 +1312,9 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 		// Header row
 		$headers = [];
+		$productLabels = $this->getProductColumnLabels();
 		foreach ($columns as $col) {
-			$headers[] = $this->availableProductsColumns[$col]['label'] ?? $col;
+			$headers[] = $productLabels[$col] ?? $this->availableProductsColumns[$col]['label'] ?? $col;
 		}
 		fputcsv($fp, $headers);
 
@@ -1310,8 +1364,8 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	 * Customers overview - aggregated by customer
 	 */
 	public function ___executeCustomers(): string {
-		$this->headline('Customers Overview');
-		$this->browserTitle('Customers');
+		$this->headline($this->_('Customers Overview'));
+		$this->browserTitle($this->_('Customers'));
 
 		$out = $this->renderTabs('customers');
 
@@ -1379,7 +1433,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 		// Render table
 		if (empty($customerData)) {
-			$out .= "<p>No customers found.</p>";
+			$out .= "<p>" . $this->_('No customers found.') . "</p>";
 		} else {
 			$table = $this->modules->get('MarkupAdminDataTable');
 			$table->setEncodeEntities(false);
@@ -1387,8 +1441,9 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 			// Dynamic header
 			$headers = [];
+			$customerLabels = $this->getCustomerColumnLabels();
 			foreach ($columns as $col) {
-				$headers[] = $this->availableCustomersColumns[$col]['label'] ?? $col;
+				$headers[] = $customerLabels[$col] ?? $this->availableCustomersColumns[$col]['label'] ?? $col;
 			}
 			$table->headerRow($headers);
 
@@ -1419,7 +1474,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 							break;
 						case 'last_activity':
 							$days = $data['last_purchase'] ? floor((time() - $data['last_purchase']) / 86400) : '-';
-							$row[] = $days !== '-' ? $days . ' days ago' : '-';
+							$row[] = $days !== '-' ? sprintf($this->_('%d days ago'), $days) : '-';
 							break;
 						default:
 							$row[] = '';
@@ -1502,8 +1557,9 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 		// Header row
 		$headers = [];
+		$customerLabels = $this->getCustomerColumnLabels();
 		foreach ($columns as $col) {
-			$headers[] = $this->availableCustomersColumns[$col]['label'] ?? $col;
+			$headers[] = $customerLabels[$col] ?? $this->availableCustomersColumns[$col]['label'] ?? $col;
 		}
 		fputcsv($fp, $headers);
 
@@ -1534,7 +1590,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 						break;
 					case 'last_activity':
 						$days = $data['last_purchase'] ? floor((time() - $data['last_purchase']) / 86400) : '';
-						$row[] = $days !== '' ? $days . ' days ago' : '';
+						$row[] = $days !== '' ? sprintf($this->_('%d days ago'), $days) : '';
 						break;
 					default:
 						$row[] = '';
@@ -1557,13 +1613,13 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 		$userId = (int)$input->get('user_id');
 		if (!$userId) {
-			echo '<p style="color:red;">No user ID provided</p>';
+			echo '<p style="color:red;">' . $this->_('No user ID provided') . '</p>';
 			exit;
 		}
 
 		$user = $users->get($userId);
 		if (!$user || !$user->id) {
-			echo '<p style="color:red;">User not found</p>';
+			echo '<p style="color:red;">' . $this->_('User not found') . '</p>';
 			exit;
 		}
 
@@ -1716,13 +1772,13 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		});
 
 		if (empty($purchasesData)) {
-			echo '<p>No purchases found for this customer.</p>';
+			echo '<p>' . $this->_('No purchases found for this customer.') . '</p>';
 			exit;
 		}
 
 		// Build title with counts
 		$userName = $user->title ?: $user->name;
-		$title = "Purchases - {$userName} ({$purchaseCount} Purchases, {$renewalCount} Renewals)";
+		$title = sprintf($this->_('Purchases - %s (%d Purchases, %d Renewals)'), $userName, $purchaseCount, $renewalCount);
 
 		// Render table using ProcessWire MarkupAdminDataTable
 		$table = $this->modules->get('MarkupAdminDataTable');
@@ -1731,7 +1787,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$table->setClass('uk-table-divider uk-table-small');
 
 		// Header
-		$table->headerRow(['Date', 'Product', 'Quantity', 'Amount', 'Type', 'Status', 'Period End']);
+		$table->headerRow([$this->_('Date'), $this->_('Product'), $this->_('Quantity'), $this->_('Amount'), $this->_('Type'), $this->_('Status'), $this->_('Period End')]);
 
 		// Rows
 		foreach ($purchasesData as $purchase) {
@@ -1764,7 +1820,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 		$productKey = $input->get->text('product_key');
 		if (!$productKey) {
-			echo '<p style="color:red;">No product key provided</p>';
+			echo '<p style="color:red;">' . $this->_('No product key provided') . '</p>';
 			exit;
 		}
 
@@ -1774,7 +1830,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$stripeProductId = $isPageId ? '' : (strpos($productKey, 'stripe:') === 0 ? substr($productKey, 7) : $productKey);
 
 		// Get product name
-		$productName = 'Unknown Product';
+		$productName = $this->_('Unknown Product');
 		if ($pageId > 0) {
 			$p = $pages->get($pageId);
 			if ($p && $p->id) {
@@ -1894,12 +1950,12 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		});
 
 		if (empty($purchasesData)) {
-			echo '<p>No purchases found for this product.</p>';
+			echo '<p>' . $this->_('No purchases found for this product.') . '</p>';
 			exit;
 		}
 
 		// Build title with counts
-		$title = "Purchases - {$productName} ({$purchaseCount} Purchases, {$renewalCount} Renewals)";
+		$title = sprintf($this->_('Purchases - %s (%d Purchases, %d Renewals)'), $productName, $purchaseCount, $renewalCount);
 
 		// Render table using ProcessWire MarkupAdminDataTable
 		$table = $this->modules->get('MarkupAdminDataTable');
@@ -1908,7 +1964,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$table->setClass('uk-table-divider uk-table-small');
 
 		// Header
-		$table->headerRow(['Customer', 'Date', 'Amount', 'Type']);
+		$table->headerRow([$this->_('Customer'), $this->_('Date'), $this->_('Amount'), $this->_('Type')]);
 
 		// Rows
 		foreach ($purchasesData as $purchase) {
@@ -1934,13 +1990,18 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	protected function renderCustomerProductsModal(): string {
 		$baseUrl = $this->page->url;
 		$modalId = 'modal_' . uniqid();
+		$loading = $this->_('Loading...');
+		$loadingPurchases = $this->_('Loading purchases...');
+		$error = $this->_('Error');
+		$errorLoading = $this->_('Error loading purchases');
+
 		return <<<HTML
 		<div id="{$modalId}" class="uk-modal-container" uk-modal>
 			<div class="uk-modal-dialog uk-modal-body">
 				<button class="uk-modal-close-default" type="button" uk-close></button>
 				<div id="customer-purchases-content">
-					<h3 class="uk-modal-title">Loading...</h3>
-					<p>Loading purchases...</p>
+					<h3 class="uk-modal-title">{$loading}</h3>
+					<p>{$loadingPurchases}</p>
 				</div>
 			</div>
 		</div>
@@ -1954,7 +2015,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 				UIkit.modal('#{$modalId}').show();
 
 				// Set loading state
-				document.getElementById('customer-purchases-content').innerHTML = '<h3 class="uk-modal-title">Loading...</h3><p>Loading purchases...</p>';
+				document.getElementById('customer-purchases-content').innerHTML = '<h3 class="uk-modal-title">{$loading}</h3><p>{$loadingPurchases}</p>';
 
 				// Fetch purchases via AJAX (returns title + table)
 				fetch('{$baseUrl}customerPurchases/?user_id=' + userId)
@@ -1969,7 +2030,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 						}
 					})
 					.catch(function(error) {
-						document.getElementById('customer-purchases-content').innerHTML = '<h3 class="uk-modal-title">Error</h3><p style="color:red;">Error loading purchases</p>';
+						document.getElementById('customer-purchases-content').innerHTML = '<h3 class="uk-modal-title">{$error}</h3><p style="color:red;">{$errorLoading}</p>';
 					});
 			}
 		});
@@ -1983,13 +2044,18 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	protected function renderProductPurchasesModal(): string {
 		$baseUrl = $this->page->url;
 		$modalId = 'modal_product_' . uniqid();
+		$loading = $this->_('Loading...');
+		$loadingPurchases = $this->_('Loading purchases...');
+		$error = $this->_('Error');
+		$errorLoading = $this->_('Error loading purchases');
+
 		return <<<HTML
 		<div id="{$modalId}" class="uk-modal-container" uk-modal>
 			<div class="uk-modal-dialog uk-modal-body">
 				<button class="uk-modal-close-default" type="button" uk-close></button>
 				<div id="product-purchases-content">
-					<h3 class="uk-modal-title">Loading...</h3>
-					<p>Loading purchases...</p>
+					<h3 class="uk-modal-title">{$loading}</h3>
+					<p>{$loadingPurchases}</p>
 				</div>
 			</div>
 		</div>
@@ -2003,7 +2069,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 				UIkit.modal('#{$modalId}').show();
 
 				// Set loading state
-				document.getElementById('product-purchases-content').innerHTML = '<h3 class="uk-modal-title">Loading...</h3><p>Loading purchases...</p>';
+				document.getElementById('product-purchases-content').innerHTML = '<h3 class="uk-modal-title">{$loading}</h3><p>{$loadingPurchases}</p>';
 
 				// Fetch purchases via AJAX (returns title + table)
 				fetch('{$baseUrl}productPurchases/?product_key=' + encodeURIComponent(productKey))
@@ -2018,7 +2084,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 						}
 					})
 					.catch(function(error) {
-						document.getElementById('product-purchases-content').innerHTML = '<h3 class="uk-modal-title">Error</h3><p style="color:red;">Error loading purchases</p>';
+						document.getElementById('product-purchases-content').innerHTML = '<h3 class="uk-modal-title">{$error}</h3><p style="color:red;">{$errorLoading}</p>';
 					});
 			}
 		});
