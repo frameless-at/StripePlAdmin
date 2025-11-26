@@ -655,17 +655,17 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 	/**
 	 * Format price for display
-	 * Format: € 3409,00 (EUR) or $ 3409.00 (USD) or CURRENCY 3409.00
+	 * Format: € 3 409,00 (EUR) or $ 3 409.00 (USD) or CURRENCY 3 409.00
 	 */
 	protected function formatPrice(int $cents, string $currency): string {
 		$amount = $cents / 100;
 
 		if ($currency === 'EUR') {
-			return '€ ' . number_format($amount, 2, ',', '');
+			return '€ ' . number_format($amount, 2, ',', ' ');
 		} elseif ($currency === 'USD') {
-			return '$ ' . number_format($amount, 2, '.', '');
+			return '$ ' . number_format($amount, 2, '.', ' ');
 		} else {
-			return $currency . ' ' . number_format($amount, 2, '.', '');
+			return $currency . ' ' . number_format($amount, 2, '.', ' ');
 		}
 	}
 
