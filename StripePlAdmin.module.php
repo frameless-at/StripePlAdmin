@@ -1079,7 +1079,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			$table->headerRow($headers);
 
 			// Dynamic rows
-			foreach ($paginatedData as $data) {
+			foreach ($paginatedData as $key => $data) {
 				$row = [];
 				foreach ($columns as $col) {
 					switch ($col) {
@@ -1092,7 +1092,9 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 							$row[] = $name;
 							break;
 						case 'purchases':
-							$row[] = $data['count'];
+							$count = $data['count'];
+							$productKey = htmlspecialchars($key);
+							$row[] = "<a href='#' class='show-product-purchases' data-product-key='{$productKey}'>{$count}</a>";
 							break;
 						case 'quantity':
 							$row[] = $data['quantity'];
@@ -1124,6 +1126,9 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 		// Pagination and Export
 		$out .= $this->renderPaginationRow($total, $perPage, $page, 'exportProducts');
+
+		// Add modal placeholder
+		$out .= $this->renderProductPurchasesModal();
 
 		return $out;
 	}
@@ -1722,6 +1727,178 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	}
 
 	/**
+	 * AJAX endpoint to get all purchases for a specific product
+	 */
+	public function ___executeProductPurchases(): void {
+		$input = $this->wire('input');
+		$users = $this->wire('users');
+		$pages = $this->wire('pages');
+
+		$productKey = $input->get->text('product_key');
+		if (!$productKey) {
+			echo '<p style="color:red;">No product key provided</p>';
+			exit;
+		}
+
+		// Determine if it's a page ID or stripe product
+		$isPageId = is_numeric($productKey);
+		$pageId = $isPageId ? (int)$productKey : 0;
+		$stripeProductId = $isPageId ? '' : (strpos($productKey, 'stripe:') === 0 ? substr($productKey, 7) : $productKey);
+
+		// Get product name
+		$productName = 'Unknown Product';
+		if ($pageId > 0) {
+			$p = $pages->get($pageId);
+			if ($p && $p->id) {
+				$productName = $p->title;
+			}
+		}
+
+		$purchasesData = [];
+		$purchaseCount = 0;
+		$renewalCount = 0;
+
+		foreach ($users->find("spl_purchases.count>0") as $user) {
+			foreach ($user->spl_purchases as $item) {
+				$purchaseDate = (int)$item->get('purchase_date');
+				$session = (array)$item->meta('stripe_session');
+				$lineItems = $session['line_items']['data'] ?? [];
+				$productIds = (array)$item->meta('product_ids');
+				$currency = strtoupper($session['currency'] ?? 'EUR');
+
+				// Check if this purchase contains our product
+				foreach ($lineItems as $li) {
+					$liStripeId = $li['price']['product']['id'] ?? ($li['price']['product'] ?? '');
+					if (is_array($liStripeId)) $liStripeId = $liStripeId['id'] ?? '';
+
+					// Check if this line item matches our product
+					$matches = false;
+					if ($pageId > 0) {
+						// Check if page ID is in product_ids and stripe ID matches
+						foreach ($productIds as $pid) {
+							$pid = (int)$pid;
+							if ($pid === $pageId) {
+								$p = $pages->get($pid);
+								if ($p && $p->id && $p->hasField('stripe_product_id') && $p->stripe_product_id === $liStripeId) {
+									$matches = true;
+									$productName = $p->title;
+									break;
+								}
+							}
+						}
+					} else {
+						// Check stripe product ID
+						if ($liStripeId === $stripeProductId) {
+							$matches = true;
+							$productName = $li['price']['product']['name']
+								?? $li['description']
+								?? $li['price']['nickname']
+								?? 'Unknown';
+						}
+					}
+
+					if ($matches) {
+						$amount = (int)($li['amount_total'] ?? 0);
+						$quantity = (int)($li['quantity'] ?? 1);
+
+						// Get subscription status
+						$periodEndMap = (array)$item->meta('period_end_map');
+						$status = '-';
+						$scopeKey = $pageId ?: ('0#' . $liStripeId);
+						if (isset($periodEndMap[$scopeKey])) {
+							$periodEndTs = (int)$periodEndMap[$scopeKey];
+							if (isset($periodEndMap[$scopeKey . '_canceled'])) {
+								$status = 'Canceled';
+							} elseif (isset($periodEndMap[$scopeKey . '_paused'])) {
+								$status = 'Paused';
+							} elseif ($periodEndTs < time()) {
+								$status = 'Expired';
+							} else {
+								$status = 'Active';
+							}
+						}
+
+						// Determine type
+						$type = ($status !== '-') ? 'Subscription' : 'Purchase';
+
+						$purchasesData[] = [
+							'customer' => $user->title ?: $user->name,
+							'date' => date('Y-m-d H:i', $purchaseDate),
+							'amount' => $amount,
+							'currency' => $currency,
+							'type' => $type,
+							'timestamp' => $purchaseDate,
+						];
+
+						$purchaseCount++;
+					}
+				}
+
+				// Process renewals for this product
+				$renewals = (array)$item->meta('renewals');
+				$scopeKey = $pageId ?: ('0#' . $stripeProductId);
+
+				if (isset($renewals[$scopeKey])) {
+					foreach ((array)$renewals[$scopeKey] as $renewal) {
+						$renewalDate = (int)($renewal['date'] ?? 0);
+						$renewalAmount = (int)($renewal['amount'] ?? 0);
+
+						$purchasesData[] = [
+							'customer' => $user->title ?: $user->name,
+							'date' => $renewalDate ? date('Y-m-d H:i', $renewalDate) : '-',
+							'amount' => $renewalAmount,
+							'currency' => $currency,
+							'type' => 'Renewal',
+							'timestamp' => $renewalDate,
+						];
+
+						$renewalCount++;
+					}
+				}
+			}
+		}
+
+		// Sort by timestamp descending
+		usort($purchasesData, function($a, $b) {
+			return $b['timestamp'] <=> $a['timestamp'];
+		});
+
+		if (empty($purchasesData)) {
+			echo '<p>No purchases found for this product.</p>';
+			exit;
+		}
+
+		// Build title with counts
+		$title = "Purchases - {$productName} ({$purchaseCount} Purchases, {$renewalCount} Renewals)";
+
+		// Render table using ProcessWire MarkupAdminDataTable
+		$table = $this->modules->get('MarkupAdminDataTable');
+		$table->setEncodeEntities(false);
+		$table->setSortable(true);
+		$table->setClass('uk-table-divider uk-table-small');
+
+		// Header
+		$table->headerRow(['Customer', 'Date', 'Amount', 'Type']);
+
+		// Rows
+		foreach ($purchasesData as $purchase) {
+			$table->row([
+				htmlspecialchars($purchase['customer']),
+				$purchase['date'],
+				$this->formatPrice($purchase['amount'], $purchase['currency']),
+				$purchase['type'],
+			]);
+		}
+
+		// Output title + table
+		$out = '<h3 class="uk-modal-title">' . htmlspecialchars($title) . '</h3>';
+		$out .= $table->render();
+
+		echo $out;
+		exit;
+	}
+
+	/**
 	 * Render modal placeholder for customer purchases
 	 */
 	protected function renderCustomerProductsModal(): string {
@@ -1763,6 +1940,55 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 					})
 					.catch(function(error) {
 						document.getElementById('customer-purchases-content').innerHTML = '<h3 class="uk-modal-title">Error</h3><p style="color:red;">Error loading purchases</p>';
+					});
+			}
+		});
+		</script>
+		HTML;
+	}
+
+	/**
+	 * Render modal for product purchases
+	 */
+	protected function renderProductPurchasesModal(): string {
+		$baseUrl = $this->page->url;
+		$modalId = 'modal_product_' . uniqid();
+		return <<<HTML
+		<div id="{$modalId}" class="uk-modal-container" uk-modal>
+			<div class="uk-modal-dialog uk-modal-body">
+				<button class="uk-modal-close-default" type="button" uk-close></button>
+				<div id="product-purchases-content">
+					<h3 class="uk-modal-title">Loading...</h3>
+					<p>Loading purchases...</p>
+				</div>
+			</div>
+		</div>
+		<script>
+		document.addEventListener('click', function(e) {
+			if (e.target.classList.contains('show-product-purchases')) {
+				e.preventDefault();
+				var productKey = e.target.getAttribute('data-product-key');
+
+				// Show modal
+				UIkit.modal('#{$modalId}').show();
+
+				// Set loading state
+				document.getElementById('product-purchases-content').innerHTML = '<h3 class="uk-modal-title">Loading...</h3><p>Loading purchases...</p>';
+
+				// Fetch purchases via AJAX (returns title + table)
+				fetch('{$baseUrl}productPurchases/?product_key=' + encodeURIComponent(productKey))
+					.then(function(response) { return response.text(); })
+					.then(function(html) {
+						document.getElementById('product-purchases-content').innerHTML = html;
+
+						// Initialize tablesorter on the dynamically loaded table
+						var table = document.querySelector('#product-purchases-content table');
+						if (table && typeof jQuery !== 'undefined' && jQuery.fn.tablesorter) {
+							jQuery(table).tablesorter();
+						}
+					})
+					.catch(function(error) {
+						document.getElementById('product-purchases-content').innerHTML = '<h3 class="uk-modal-title">Error</h3><p style="color:red;">Error loading purchases</p>';
 					});
 			}
 		});
