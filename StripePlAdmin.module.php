@@ -62,6 +62,18 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	];
 
 	/**
+	 * Default columns to show
+	 */
+	public static function getDefaults(): array {
+		return [
+			'purchasesColumns' => ['user_email', 'purchase_date', 'product_titles', 'amount_total', 'payment_status'],
+			'productsColumns' => ['name', 'purchases', 'quantity', 'revenue', 'last_purchase'],
+			'customersColumns' => ['name', 'email', 'total_purchases', 'total_revenue', 'first_purchase', 'last_activity'],
+			'itemsPerPage' => 25,
+		];
+	}
+
+	/**
 	 * Get translatable column labels
 	 */
 	protected function getColumnLabels(): array {
