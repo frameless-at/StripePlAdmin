@@ -37,8 +37,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		// Stripe session meta
 		'session_id'        => ['label' => 'Session ID', 'path' => ['stripe_session', 'id']],
 		'customer_id'       => ['label' => 'Customer ID', 'path' => ['stripe_session', 'customer', 'id']],
-		'customer_email'    => ['label' => 'Customer Email', 'path' => ['stripe_session', 'customer_email']],
-		'customer_name'     => ['label' => 'Customer Name', 'path' => ['stripe_session', 'customer', 'name']],
+		'customer_name'     => ['label' => 'Customer Name', 'type' => 'computed', 'compute' => 'computeCustomerName'],
 		'payment_status'    => ['label' => 'Payment Status', 'path' => ['stripe_session', 'payment_status']],
 		'currency'          => ['label' => 'Currency', 'path' => ['stripe_session', 'currency']],
 		'amount_total'      => ['label' => 'Amount Total', 'type' => 'computed', 'compute' => 'computeAmountTotal'],
@@ -372,7 +371,8 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		foreach ($allPurchases as $purchase) {
 			$row = [];
 			foreach ($columns as $col) {
-				$row[] = $this->getColumnValue($purchase['user'], $purchase['item'], $col);
+				$value = $this->getColumnValue($purchase['user'], $purchase['item'], $col);
+				$row[] = strip_tags($value);
 			}
 			fputcsv($fp, $row);
 		}
@@ -568,7 +568,10 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 		switch ($type) {
 			case 'user':
-				if ($column === 'user_email') return (string)$user->email;
+				if ($column === 'user_email') {
+					$email = (string)$user->email;
+					return $email ? "<a href='mailto:{$email}'>{$email}</a>" : '';
+				}
 				if ($column === 'user_name') return (string)$user->title;
 				break;
 
@@ -685,6 +688,19 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		]);
 
 		return implode(', ', $parts);
+	}
+
+	/**
+	 * Compute customer name with link to user
+	 */
+	protected function computeCustomerName(User $user, Page $item): string {
+		$session = (array)$item->meta('stripe_session');
+		$customerName = $session['customer']['name'] ?? '';
+
+		if (!$customerName) return '';
+
+		$editUrl = $this->wire('config')->urls->admin . "access/users/edit/?id={$user->id}";
+		return "<a href='{$editUrl}'>{$customerName}</a>";
 	}
 
 	/**
