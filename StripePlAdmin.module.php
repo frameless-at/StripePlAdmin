@@ -262,21 +262,34 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$perPage = (int)($this->itemsPerPage ?: 25);
 
 		// Filters
-		$filterEmail = $sanitizer->email($input->get('filter_email'));
-		$filterProduct = $sanitizer->text($input->get('filter_product'));
+		$filterSearch = $sanitizer->text($input->get('filter_search'));
+		$filterProducts = $input->get('filter_products');
+		if (!is_array($filterProducts)) {
+			$filterProducts = $filterProducts ? [$filterProducts] : [];
+		}
+		$filterProducts = array_map([$sanitizer, 'text'], $filterProducts);
 		$filterDateFrom = $sanitizer->text($input->get('filter_from'));
 		$filterDateTo = $sanitizer->text($input->get('filter_to'));
 
 		// Build filter form
-		$out .= $this->renderFilterForm($filterEmail, $filterProduct, $filterDateFrom, $filterDateTo);
+		$out .= $this->renderFilterForm($filterSearch, $filterProducts, $filterDateFrom, $filterDateTo);
 
 		// Collect all purchases
 		$allPurchases = [];
 
 		/** @var User $user */
 		foreach ($users->find("spl_purchases.count>0") as $user) {
-			if ($filterEmail && strtolower($user->email) !== strtolower($filterEmail)) {
-				continue;
+			// Search filter - check email, user name, and customer name
+			if ($filterSearch) {
+				$searchLower = strtolower($filterSearch);
+				$userEmail = strtolower($user->email);
+				$userName = strtolower($user->title ?: $user->name);
+
+				$matchFound = (strpos($userEmail, $searchLower) !== false) || (strpos($userName, $searchLower) !== false);
+
+				if (!$matchFound) {
+					continue;
+				}
 			}
 
 			foreach ($user->spl_purchases as $item) {
@@ -292,31 +305,34 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 					if ($toTs && $purchaseDate > $toTs) continue;
 				}
 
-				// Product filter
-				if ($filterProduct) {
+				// Product filter (multiselect)
+				if (!empty($filterProducts)) {
 					$found = false;
+					$productIds = (array)$item->meta('product_ids');
+					$session = (array)$item->meta('stripe_session');
+					$lineItems = $session['line_items']['data'] ?? [];
 
-					// Check if it's a page ID filter
-					if (is_numeric($filterProduct)) {
-						$productIds = (array)$item->meta('product_ids');
-						if (in_array((int)$filterProduct, array_map('intval', $productIds))) {
-							$found = true;
-						}
-					}
-					// Check if it's a stripe product name filter
-					elseif (strpos($filterProduct, 'stripe:') === 0) {
-						$searchName = substr($filterProduct, 7); // Remove "stripe:" prefix
-						$session = (array)$item->meta('stripe_session');
-						$lineItems = $session['line_items']['data'] ?? [];
-
-						foreach ($lineItems as $li) {
-							$productName = $li['price']['product']['name']
-								?? $li['description']
-								?? $li['price']['nickname']
-								?? '';
-							if ($productName === $searchName) {
+					foreach ($filterProducts as $filterProduct) {
+						// Check if it's a page ID filter
+						if (is_numeric($filterProduct)) {
+							if (in_array((int)$filterProduct, array_map('intval', $productIds))) {
 								$found = true;
 								break;
+							}
+						}
+						// Check if it's a stripe product name filter
+						elseif (strpos($filterProduct, 'stripe:') === 0) {
+							$searchName = substr($filterProduct, 7); // Remove "stripe:" prefix
+
+							foreach ($lineItems as $li) {
+								$productName = $li['price']['product']['name']
+									?? $li['description']
+									?? $li['price']['nickname']
+									?? '';
+								if ($productName === $searchName) {
+									$found = true;
+									break 2; // Break out of both loops
+								}
 							}
 						}
 					}
@@ -363,15 +379,28 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$columns = $this->purchasesColumns ?: self::getDefaults()['purchasesColumns'];
 
 		// Filters
-		$filterEmail = $sanitizer->email($input->get('filter_email'));
-		$filterProduct = $sanitizer->text($input->get('filter_product'));
+		$filterSearch = $sanitizer->text($input->get('filter_search'));
+		$filterProducts = $input->get('filter_products');
+		if (!is_array($filterProducts)) {
+			$filterProducts = $filterProducts ? [$filterProducts] : [];
+		}
+		$filterProducts = array_map([$sanitizer, 'text'], $filterProducts);
 		$filterDateFrom = $sanitizer->text($input->get('filter_from'));
 		$filterDateTo = $sanitizer->text($input->get('filter_to'));
 
 		// Collect purchases
 		$allPurchases = [];
 		foreach ($users->find("spl_purchases.count>0") as $user) {
-			if ($filterEmail && strtolower($user->email) !== strtolower($filterEmail)) continue;
+			// Search filter - check email, user name
+			if ($filterSearch) {
+				$searchLower = strtolower($filterSearch);
+				$userEmail = strtolower($user->email);
+				$userName = strtolower($user->title ?: $user->name);
+
+				$matchFound = (strpos($userEmail, $searchLower) !== false) || (strpos($userName, $searchLower) !== false);
+
+				if (!$matchFound) continue;
+			}
 
 			foreach ($user->spl_purchases as $item) {
 				$purchaseDate = (int)$item->get('purchase_date');
@@ -379,30 +408,34 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 				if ($filterDateFrom && ($ts = strtotime($filterDateFrom)) && $purchaseDate < $ts) continue;
 				if ($filterDateTo && ($ts = strtotime($filterDateTo . ' 23:59:59')) && $purchaseDate > $ts) continue;
 
-				if ($filterProduct) {
+				// Product filter (multiselect)
+				if (!empty($filterProducts)) {
 					$found = false;
+					$productIds = (array)$item->meta('product_ids');
+					$session = (array)$item->meta('stripe_session');
+					$lineItems = $session['line_items']['data'] ?? [];
 
-					// Check if it's a page ID filter
-					if (is_numeric($filterProduct)) {
-						$productIds = (array)$item->meta('product_ids');
-						if (in_array((int)$filterProduct, array_map('intval', $productIds))) {
-							$found = true;
-						}
-					}
-					// Check if it's a stripe product name filter
-					elseif (strpos($filterProduct, 'stripe:') === 0) {
-						$searchName = substr($filterProduct, 7); // Remove "stripe:" prefix
-						$session = (array)$item->meta('stripe_session');
-						$lineItems = $session['line_items']['data'] ?? [];
-
-						foreach ($lineItems as $li) {
-							$productName = $li['price']['product']['name']
-								?? $li['description']
-								?? $li['price']['nickname']
-								?? '';
-							if ($productName === $searchName) {
+					foreach ($filterProducts as $filterProduct) {
+						// Check if it's a page ID filter
+						if (is_numeric($filterProduct)) {
+							if (in_array((int)$filterProduct, array_map('intval', $productIds))) {
 								$found = true;
 								break;
+							}
+						}
+						// Check if it's a stripe product name filter
+						elseif (strpos($filterProduct, 'stripe:') === 0) {
+							$searchName = substr($filterProduct, 7); // Remove "stripe:" prefix
+
+							foreach ($lineItems as $li) {
+								$productName = $li['price']['product']['name']
+									?? $li['description']
+									?? $li['price']['nickname']
+									?? '';
+								if ($productName === $searchName) {
+									$found = true;
+									break 2; // Break out of both loops
+								}
 							}
 						}
 					}
@@ -447,7 +480,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	/**
 	 * Render filter form
 	 */
-	protected function renderFilterForm(string $email, string $product, string $from, string $to): string {
+	protected function renderFilterForm(string $search, array $products, string $from, string $to): string {
 		$pages = $this->wire('pages');
 		$modules = $this->wire('modules');
 
@@ -457,22 +490,21 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$form->method = 'get';
 		$form->action = './';
 
-		// Email filter
-		/** @var InputfieldEmail $f */
-		$f = $modules->get('InputfieldEmail');
-		$f->name = 'filter_email';
-		$f->label = $this->_('Email');
+		// Search filter (name/email)
+		/** @var InputfieldText $f */
+		$f = $modules->get('InputfieldText');
+		$f->name = 'filter_search';
+		$f->label = $this->_('Search (Name/Email)');
 		$f->columnWidth = 25;
-		$f->value = $email;
+		$f->value = $search;
 		$f->collapsed = Inputfield::collapsedNever;
 		$form->add($f);
 
-		/** @var InputfieldSelect $f */
-		$f = $modules->get('InputfieldSelect');
-		$f->name = 'filter_product';
-		$f->label = $this->_('Product');
+		/** @var InputfieldAsmSelect $f */
+		$f = $modules->get('InputfieldAsmSelect');
+		$f->name = 'filter_products';
+		$f->label = $this->_('Products');
 		$f->columnWidth = 25;
-		$f->addOption('', $this->_('All Products'));
 
 		// Collect all unique product options from actual purchases
 		$productOptions = [];
@@ -528,12 +560,12 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			}
 		}
 
-		// Sort by title and add to dropdown
+		// Sort by title and add to multiselect
 		asort($productOptions);
 		foreach ($productOptions as $value => $label) {
 			$f->addOption($value, $label);
 		}
-		$f->value = $product ?: '';
+		$f->value = $products;
 		$form->add($f);
 
 		// From date
@@ -774,8 +806,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	 * Compute customer name with link to user
 	 */
 	protected function computeCustomerName(User $user, Page $item): string {
-		$session = (array)$item->meta('stripe_session');
-		$customerName = $session['customer']['name'] ?? '';
+		$customerName = $user->title ?: $user->name;
 		return $this->renderCustomerName($customerName, $user->id);
 	}
 
