@@ -1,12 +1,12 @@
 <?php namespace ProcessWire;
 
 /**
- * ProcessStripePlAdmin
+ * Stripe Payment Links Admin
  *
  * Admin page for viewing customer purchases with configurable columns.
  * Displays purchase metadata including Stripe session data.
  */
-class ProcessStripePlAdmin extends Process implements ConfigurableModule {
+class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 	public static function getModuleInfo(): array {
 		return [
@@ -18,8 +18,8 @@ class ProcessStripePlAdmin extends Process implements ConfigurableModule {
 			'requires'    => ['StripePaymentLinks'],
 			'page'        => [
 				'name'   => 'stripe-pl-admin',
-				'parent' => 'setup',
-				'title'  => 'Stripe Purchases',
+				'parent' => 'admin',
+				'title'  => 'Stripe PL Admin',
 			],
 		];
 	}
@@ -37,8 +37,7 @@ class ProcessStripePlAdmin extends Process implements ConfigurableModule {
 		// Stripe session meta
 		'session_id'        => ['label' => 'Session ID', 'path' => ['stripe_session', 'id']],
 		'customer_id'       => ['label' => 'Customer ID', 'path' => ['stripe_session', 'customer', 'id']],
-		'customer_email'    => ['label' => 'Customer Email', 'path' => ['stripe_session', 'customer_email']],
-		'customer_name'     => ['label' => 'Customer Name', 'path' => ['stripe_session', 'customer', 'name']],
+		'customer_name'     => ['label' => 'Customer Name', 'type' => 'computed', 'compute' => 'computeCustomerName'],
 		'payment_status'    => ['label' => 'Payment Status', 'path' => ['stripe_session', 'payment_status']],
 		'currency'          => ['label' => 'Currency', 'path' => ['stripe_session', 'currency']],
 		'amount_total'      => ['label' => 'Amount Total', 'type' => 'computed', 'compute' => 'computeAmountTotal'],
@@ -63,13 +62,30 @@ class ProcessStripePlAdmin extends Process implements ConfigurableModule {
 	];
 
 	/**
-	 * Default columns to show
+	 * Get translatable column labels
 	 */
-	public static function getDefaults(): array {
+	protected function getColumnLabels(): array {
 		return [
-			'purchasesColumns' => ['user_email', 'purchase_date', 'product_titles', 'amount_total', 'payment_status'],
-			'productsColumns' => ['name', 'purchases', 'quantity', 'revenue', 'last_purchase'],
-			'itemsPerPage' => 25,
+			'user_email' => $this->_('User Email'),
+			'user_name' => $this->_('User Name'),
+			'purchase_date' => $this->_('Purchase Date'),
+			'purchase_lines' => $this->_('Purchase Lines'),
+			'session_id' => $this->_('Session ID'),
+			'customer_id' => $this->_('Customer ID'),
+			'customer_name' => $this->_('Customer Name'),
+			'payment_status' => $this->_('Payment Status'),
+			'currency' => $this->_('Currency'),
+			'amount_total' => $this->_('Amount Total'),
+			'subscription_id' => $this->_('Subscription ID'),
+			'shipping_name' => $this->_('Shipping Name'),
+			'shipping_address' => $this->_('Shipping Address'),
+			'product_ids' => $this->_('Product IDs'),
+			'product_titles' => $this->_('Product Titles'),
+			'subscription_status' => $this->_('Subscription Status'),
+			'period_end' => $this->_('Period End'),
+			'line_items_count' => $this->_('Items Count'),
+			'renewal_count' => $this->_('Renewal Count'),
+			'last_renewal' => $this->_('Last Renewal'),
 		];
 	}
 
@@ -88,6 +104,48 @@ class ProcessStripePlAdmin extends Process implements ConfigurableModule {
 	];
 
 	/**
+	 * Get translatable product column labels
+	 */
+	protected function getProductColumnLabels(): array {
+		return [
+			'name' => $this->_('Product Name'),
+			'purchases' => $this->_('Purchases'),
+			'quantity' => $this->_('Quantity'),
+			'revenue' => $this->_('Revenue'),
+			'last_purchase' => $this->_('Last Purchase'),
+			'renewals' => $this->_('Renewals'),
+			'page_id' => $this->_('Page ID'),
+			'stripe_id' => $this->_('Stripe Product ID'),
+		];
+	}
+
+	/**
+	 * Available columns for Customers tab
+	 */
+	protected array $availableCustomersColumns = [
+		'name'            => ['label' => 'Name'],
+		'email'           => ['label' => 'Email'],
+		'total_purchases' => ['label' => 'Total Purchases'],
+		'total_revenue'   => ['label' => 'Total Revenue'],
+		'first_purchase'  => ['label' => 'First Purchase'],
+		'last_activity'   => ['label' => 'Last Activity'],
+	];
+
+	/**
+	 * Get translatable customer column labels
+	 */
+	protected function getCustomerColumnLabels(): array {
+		return [
+			'name' => $this->_('Name'),
+			'email' => $this->_('Email'),
+			'total_purchases' => $this->_('Total Purchases'),
+			'total_revenue' => $this->_('Total Revenue'),
+			'first_purchase' => $this->_('First Purchase'),
+			'last_activity' => $this->_('Last Activity'),
+		];
+	}
+
+	/**
 	 * Module configuration
 	 */
 	public static function getModuleConfigInputfields(array $data): InputfieldWrapper {
@@ -97,19 +155,23 @@ class ProcessStripePlAdmin extends Process implements ConfigurableModule {
 		$defaults = self::getDefaults();
 		$data = array_merge($defaults, $data);
 
+		$instance = new self();
+		$columnLabels = $instance->getColumnLabels();
+		$productLabels = $instance->getProductColumnLabels();
+		$customerLabels = $instance->getCustomerColumnLabels();
+
 		// Purchases Tab
 		$tab1 = $modules->get('InputfieldFieldset');
-		$tab1->label = 'Purchases';
+		$tab1->label = $instance->_('Purchases');
 		$tab1->collapsed = Inputfield::collapsedNo;
 
 		$f = $modules->get('InputfieldAsmSelect');
 		$f->name = 'purchasesColumns';
-		$f->label = 'Columns for Purchases tab';
-		$f->description = 'Select and order the columns to show in the purchases table.';
+		$f->label = $instance->_('Columns for Purchases tab');
+		$f->description = $instance->_('Select and order the columns to show in the purchases table.');
 
-		$instance = new self();
 		foreach ($instance->availableColumns as $key => $col) {
-			$f->addOption($key, $col['label']);
+			$f->addOption($key, $columnLabels[$key] ?? $col['label']);
 		}
 		$f->value = $data['purchasesColumns'] ?? $data['adminColumns'] ?? [];
 		$tab1->add($f);
@@ -118,35 +180,53 @@ class ProcessStripePlAdmin extends Process implements ConfigurableModule {
 
 		// Products Tab
 		$tab2 = $modules->get('InputfieldFieldset');
-		$tab2->label = 'Products';
+		$tab2->label = $instance->_('Products');
 		$tab2->collapsed = Inputfield::collapsedNo;
 
 		$f = $modules->get('InputfieldAsmSelect');
 		$f->name = 'productsColumns';
-		$f->label = 'Columns for Products tab';
-		$f->description = 'Select and order the columns to show in the products table.';
+		$f->label = $instance->_('Columns for Products tab');
+		$f->description = $instance->_('Select and order the columns to show in the products table.');
 
 		foreach ($instance->availableProductsColumns as $key => $col) {
-			$f->addOption($key, $col['label']);
+			$f->addOption($key, $productLabels[$key] ?? $col['label']);
 		}
 		$f->value = $data['productsColumns'] ?? [];
 		$tab2->add($f);
 
 		$wrapper->add($tab2);
 
-		// General settings
+		// Customers Tab
 		$tab3 = $modules->get('InputfieldFieldset');
-		$tab3->label = 'General';
+		$tab3->label = $instance->_('Customers');
 		$tab3->collapsed = Inputfield::collapsedNo;
 
-		$f = $modules->get('InputfieldInteger');
-		$f->name = 'itemsPerPage';
-		$f->label = 'Items per page';
-		$f->value = $data['itemsPerPage'];
-		$f->max = 500;
+		$f = $modules->get('InputfieldAsmSelect');
+		$f->name = 'customersColumns';
+		$f->label = $instance->_('Columns for Customers tab');
+		$f->description = $instance->_('Select and order the columns to show in the customers table.');
+
+		foreach ($instance->availableCustomersColumns as $key => $col) {
+			$f->addOption($key, $customerLabels[$key] ?? $col['label']);
+		}
+		$f->value = $data['customersColumns'] ?? [];
 		$tab3->add($f);
 
 		$wrapper->add($tab3);
+
+		// General settings
+		$tab4 = $modules->get('InputfieldFieldset');
+		$tab4->label = $instance->_('General');
+		$tab4->collapsed = Inputfield::collapsedNo;
+
+		$f = $modules->get('InputfieldInteger');
+		$f->name = 'itemsPerPage';
+		$f->label = $instance->_('Items per page');
+		$f->value = $data['itemsPerPage'];
+		$f->max = 500;
+		$tab4->add($f);
+
+		$wrapper->add($tab4);
 
 		return $wrapper;
 	}
@@ -155,8 +235,8 @@ class ProcessStripePlAdmin extends Process implements ConfigurableModule {
 	 * Main execute method - renders the purchases table
 	 */
 	public function ___execute(): string {
-		$this->headline('Customer Purchases');
-		$this->browserTitle('Purchases');
+		$this->headline($this->_('Purchases Overview'));
+		$this->browserTitle($this->_('Purchases'));
 
 		// Tab navigation
 		$out = $this->renderTabs('purchases');
@@ -171,7 +251,7 @@ class ProcessStripePlAdmin extends Process implements ConfigurableModule {
 
 		// Filters
 		$filterEmail = $sanitizer->email($input->get('filter_email'));
-		$filterProduct = (int)$input->get('filter_product');
+		$filterProduct = $sanitizer->text($input->get('filter_product'));
 		$filterDateFrom = $sanitizer->text($input->get('filter_from'));
 		$filterDateTo = $sanitizer->text($input->get('filter_to'));
 
@@ -202,8 +282,34 @@ class ProcessStripePlAdmin extends Process implements ConfigurableModule {
 
 				// Product filter
 				if ($filterProduct) {
-					$productIds = (array)$item->meta('product_ids');
-					if (!in_array($filterProduct, array_map('intval', $productIds))) {
+					$found = false;
+
+					// Check if it's a page ID filter
+					if (is_numeric($filterProduct)) {
+						$productIds = (array)$item->meta('product_ids');
+						if (in_array((int)$filterProduct, array_map('intval', $productIds))) {
+							$found = true;
+						}
+					}
+					// Check if it's a stripe product name filter
+					elseif (strpos($filterProduct, 'stripe:') === 0) {
+						$searchName = substr($filterProduct, 7); // Remove "stripe:" prefix
+						$session = (array)$item->meta('stripe_session');
+						$lineItems = $session['line_items']['data'] ?? [];
+
+						foreach ($lineItems as $li) {
+							$productName = $li['price']['product']['name']
+								?? $li['description']
+								?? $li['price']['nickname']
+								?? '';
+							if ($productName === $searchName) {
+								$found = true;
+								break;
+							}
+						}
+					}
+
+					if (!$found) {
 						continue;
 					}
 				}
@@ -246,7 +352,7 @@ class ProcessStripePlAdmin extends Process implements ConfigurableModule {
 
 		// Filters
 		$filterEmail = $sanitizer->email($input->get('filter_email'));
-		$filterProduct = (int)$input->get('filter_product');
+		$filterProduct = $sanitizer->text($input->get('filter_product'));
 		$filterDateFrom = $sanitizer->text($input->get('filter_from'));
 		$filterDateTo = $sanitizer->text($input->get('filter_to'));
 
@@ -262,8 +368,34 @@ class ProcessStripePlAdmin extends Process implements ConfigurableModule {
 				if ($filterDateTo && ($ts = strtotime($filterDateTo . ' 23:59:59')) && $purchaseDate > $ts) continue;
 
 				if ($filterProduct) {
-					$productIds = (array)$item->meta('product_ids');
-					if (!in_array($filterProduct, array_map('intval', $productIds))) continue;
+					$found = false;
+
+					// Check if it's a page ID filter
+					if (is_numeric($filterProduct)) {
+						$productIds = (array)$item->meta('product_ids');
+						if (in_array((int)$filterProduct, array_map('intval', $productIds))) {
+							$found = true;
+						}
+					}
+					// Check if it's a stripe product name filter
+					elseif (strpos($filterProduct, 'stripe:') === 0) {
+						$searchName = substr($filterProduct, 7); // Remove "stripe:" prefix
+						$session = (array)$item->meta('stripe_session');
+						$lineItems = $session['line_items']['data'] ?? [];
+
+						foreach ($lineItems as $li) {
+							$productName = $li['price']['product']['name']
+								?? $li['description']
+								?? $li['price']['nickname']
+								?? '';
+							if ($productName === $searchName) {
+								$found = true;
+								break;
+							}
+						}
+					}
+
+					if (!$found) continue;
 				}
 
 				$allPurchases[] = ['user' => $user, 'item' => $item, 'date' => $purchaseDate];
@@ -280,8 +412,9 @@ class ProcessStripePlAdmin extends Process implements ConfigurableModule {
 
 		// Header row
 		$headers = [];
+		$columnLabels = $this->getColumnLabels();
 		foreach ($columns as $col) {
-			$headers[] = $this->availableColumns[$col]['label'] ?? $col;
+			$headers[] = $columnLabels[$col] ?? $this->availableColumns[$col]['label'] ?? $col;
 		}
 		fputcsv($fp, $headers);
 
@@ -289,7 +422,8 @@ class ProcessStripePlAdmin extends Process implements ConfigurableModule {
 		foreach ($allPurchases as $purchase) {
 			$row = [];
 			foreach ($columns as $col) {
-				$row[] = $this->getColumnValue($purchase['user'], $purchase['item'], $col);
+				$value = $this->getColumnValue($purchase['user'], $purchase['item'], $col);
+				$row[] = strip_tags($value);
 			}
 			fputcsv($fp, $row);
 		}
@@ -301,7 +435,7 @@ class ProcessStripePlAdmin extends Process implements ConfigurableModule {
 	/**
 	 * Render filter form
 	 */
-	protected function renderFilterForm(string $email, int $product, string $from, string $to): string {
+	protected function renderFilterForm(string $email, string $product, string $from, string $to): string {
 		$pages = $this->wire('pages');
 		$modules = $this->wire('modules');
 
@@ -315,29 +449,77 @@ class ProcessStripePlAdmin extends Process implements ConfigurableModule {
 		/** @var InputfieldEmail $f */
 		$f = $modules->get('InputfieldEmail');
 		$f->name = 'filter_email';
-		$f->label = 'Email';
+		$f->label = $this->_('Email');
 		$f->columnWidth = 25;
 		$f->value = $email;
 		$f->collapsed = Inputfield::collapsedNever;
 		$form->add($f);
 
-		// Product filter
-		$mainModule = $modules->get('StripePaymentLinks');
-		$tplNames = (array)($mainModule->productTemplateNames ?? []);
-
 		/** @var InputfieldSelect $f */
 		$f = $modules->get('InputfieldSelect');
 		$f->name = 'filter_product';
-		$f->label = 'Product';
+		$f->label = $this->_('Product');
 		$f->columnWidth = 25;
-		$f->addOption('', 'All Products');
+		$f->addOption('', $this->_('All Products'));
 
-		if (!empty($tplNames)) {
-			$tplSelector = 'template=' . implode('|', array_map('trim', $tplNames));
-			$products = $pages->find("{$tplSelector}, sort=title, include=all");
-			foreach ($products as $p) {
-				$f->addOption($p->id, $p->title);
+		// Collect all unique product options from actual purchases
+		$productOptions = [];
+
+		// Add all products from actual purchases (both mapped and unmapped)
+		$users = $this->wire('users');
+		foreach ($users->find("spl_purchases.count>0") as $user) {
+			foreach ($user->spl_purchases as $item) {
+				$session = (array)$item->meta('stripe_session');
+				$lineItems = $session['line_items']['data'] ?? [];
+				$productIds = (array)$item->meta('product_ids');
+
+				// Process mapped products
+				foreach ($productIds as $pid) {
+					$pid = (int)$pid;
+					if ($pid === 0) continue;
+					$p = $pages->get($pid);
+					if ($p && $p->id) {
+						$productOptions[$p->id] = $p->title;
+					}
+				}
+
+				// Process unmapped products from line items
+				foreach ($lineItems as $li) {
+					$stripeProductId = $li['price']['product']['id'] ?? ($li['price']['product'] ?? '');
+					if (is_array($stripeProductId)) $stripeProductId = $stripeProductId['id'] ?? '';
+
+					$productName = $li['price']['product']['name']
+						?? $li['description']
+						?? $li['price']['nickname']
+						?? '';
+
+					if ($productName) {
+						// Check if this Stripe product is already mapped to a page
+						$isMapped = false;
+						foreach ($productIds as $pid) {
+							$pid = (int)$pid;
+							if ($pid === 0) continue;
+							$p = $pages->get($pid);
+							if ($p && $p->id && $p->hasField('stripe_product_id') && $p->stripe_product_id === $stripeProductId) {
+								$isMapped = true;
+								break;
+							}
+						}
+
+						// Only add unmapped products with special identifier
+						if (!$isMapped) {
+							$key = 'stripe:' . $productName;
+							$productOptions[$key] = $productName;
+						}
+					}
+				}
 			}
+		}
+
+		// Sort by title and add to dropdown
+		asort($productOptions);
+		foreach ($productOptions as $value => $label) {
+			$f->addOption($value, $label);
 		}
 		$f->value = $product ?: '';
 		$form->add($f);
@@ -346,7 +528,7 @@ class ProcessStripePlAdmin extends Process implements ConfigurableModule {
 		/** @var InputfieldText $f */
 		$f = $modules->get('InputfieldText');
 		$f->name = 'filter_from';
-		$f->label = 'From';
+		$f->label = $this->_('From');
 		$f->attr('type', 'date');
 		$f->columnWidth = 15;
 		$f->value = $from;
@@ -356,7 +538,7 @@ class ProcessStripePlAdmin extends Process implements ConfigurableModule {
 		/** @var InputfieldText $f */
 		$f = $modules->get('InputfieldText');
 		$f->name = 'filter_to';
-		$f->label = 'To';
+		$f->label = $this->_('To');
 		$f->attr('type', 'date');
 		$f->columnWidth = 15;
 		$f->value = $to;
@@ -368,8 +550,8 @@ class ProcessStripePlAdmin extends Process implements ConfigurableModule {
 		$f->name = 'buttons';
 		$f->label = ' ';
 		$f->columnWidth = 20;
-		$f->value = "<button type='submit' class='ui-button ui-state-default'><span class='ui-button-text'>Filter</span></button> ";
-		$f->value .= "<a href='{$this->page->url}' class='ui-button ui-state-default ui-priority-secondary'><span class='ui-button-text'>Reset</span></a>";
+		$f->value = "<button type='submit' class='ui-button ui-state-default'><span class='ui-button-text'>" . $this->_('Filter') . "</span></button> ";
+		$f->value .= "<a href='{$this->page->url}' class='ui-button ui-state-default ui-priority-secondary'><span class='ui-button-text'>" . $this->_('Reset') . "</span></a>";
 		$form->add($f);
 
 		return $form->render();
@@ -380,7 +562,7 @@ class ProcessStripePlAdmin extends Process implements ConfigurableModule {
 	 */
 	protected function renderTable(array $purchases, array $columns): string {
 		if (empty($purchases)) {
-			return "<p>No purchases found.</p>";
+			return "<p>" . $this->_('No purchases found.') . "</p>";
 		}
 
 		$table = $this->modules->get('MarkupAdminDataTable');
@@ -389,8 +571,9 @@ class ProcessStripePlAdmin extends Process implements ConfigurableModule {
 
 		// Header
 		$headerRow = [];
+		$columnLabels = $this->getColumnLabels();
 		foreach ($columns as $col) {
-			$headerRow[] = $this->availableColumns[$col]['label'] ?? $col;
+			$headerRow[] = $columnLabels[$col] ?? $this->availableColumns[$col]['label'] ?? $col;
 		}
 		$table->headerRow($headerRow);
 
@@ -437,7 +620,9 @@ class ProcessStripePlAdmin extends Process implements ConfigurableModule {
 
 		switch ($type) {
 			case 'user':
-				if ($column === 'user_email') return (string)$user->email;
+				if ($column === 'user_email') {
+					return $this->renderUserEmail((string)$user->email);
+				}
 				if ($column === 'user_name') return (string)$user->title;
 				break;
 
@@ -537,6 +722,23 @@ class ProcessStripePlAdmin extends Process implements ConfigurableModule {
 	}
 
 	/**
+	 * Render user email with mailto link
+	 */
+	protected function renderUserEmail(string $email): string {
+		if (!$email) return '';
+		return "<a href='mailto:{$email}'>{$email}</a>";
+	}
+
+	/**
+	 * Render customer name with link to user
+	 */
+	protected function renderCustomerName(string $customerName, int $userId): string {
+		if (!$customerName) return '';
+		$editUrl = $this->wire('config')->urls->admin . "access/users/edit/?id={$userId}";
+		return "<a href='{$editUrl}'>{$customerName}</a>";
+	}
+
+	/**
 	 * Compute shipping address
 	 */
 	protected function computeShippingAddress(User $user, Page $item): string {
@@ -554,6 +756,15 @@ class ProcessStripePlAdmin extends Process implements ConfigurableModule {
 		]);
 
 		return implode(', ', $parts);
+	}
+
+	/**
+	 * Compute customer name with link to user
+	 */
+	protected function computeCustomerName(User $user, Page $item): string {
+		$session = (array)$item->meta('stripe_session');
+		$customerName = $session['customer']['name'] ?? '';
+		return $this->renderCustomerName($customerName, $user->id);
 	}
 
 	/**
@@ -798,11 +1009,12 @@ class ProcessStripePlAdmin extends Process implements ConfigurableModule {
 	 */
 	protected function renderTabs(string $active): string {
 		$baseUrl = $this->page->url;
-		$configUrl = $this->wire('config')->urls->admin . 'module/edit/?name=ProcessStripePlAdmin';
+		$configUrl = $this->wire('config')->urls->admin . 'module/edit/?name=' . $this->className();
 
 		$tabs = [
 			'purchases' => ['url' => $baseUrl, 'label' => 'Purchases'],
 			'products' => ['url' => $baseUrl . 'products/', 'label' => 'Products'],
+			'customers' => ['url' => $baseUrl . 'customers/', 'label' => 'Customers'],
 		];
 
 		$out = "<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:20px'>";
@@ -826,8 +1038,8 @@ class ProcessStripePlAdmin extends Process implements ConfigurableModule {
 	 * Products overview - aggregated by product
 	 */
 	public function ___executeProducts(): string {
-		$this->headline('Products Overview');
-		$this->browserTitle('Products');
+		$this->headline($this->_('Products Overview'));
+		$this->browserTitle($this->_('Products'));
 
 		$out = $this->renderTabs('products');
 
@@ -933,7 +1145,7 @@ class ProcessStripePlAdmin extends Process implements ConfigurableModule {
 
 		// Render table
 		if (empty($productData)) {
-			$out .= "<p>No products found.</p>";
+			$out .= "<p>" . $this->_('No products found.') . "</p>";
 		} else {
 			$table = $this->modules->get('MarkupAdminDataTable');
 			$table->setEncodeEntities(false);
@@ -941,13 +1153,14 @@ class ProcessStripePlAdmin extends Process implements ConfigurableModule {
 
 			// Dynamic header
 			$headers = [];
+			$productLabels = $this->getProductColumnLabels();
 			foreach ($columns as $col) {
-				$headers[] = $this->availableProductsColumns[$col]['label'] ?? $col;
+				$headers[] = $productLabels[$col] ?? $this->availableProductsColumns[$col]['label'] ?? $col;
 			}
 			$table->headerRow($headers);
 
 			// Dynamic rows
-			foreach ($paginatedData as $data) {
+			foreach ($paginatedData as $key => $data) {
 				$row = [];
 				foreach ($columns as $col) {
 					switch ($col) {
@@ -960,7 +1173,9 @@ class ProcessStripePlAdmin extends Process implements ConfigurableModule {
 							$row[] = $name;
 							break;
 						case 'purchases':
-							$row[] = $data['count'];
+							$count = $data['count'];
+							$productKey = htmlspecialchars($key);
+							$row[] = "<a href='#' class='show-product-purchases' data-product-key='{$productKey}'>{$count}</a>";
 							break;
 						case 'quantity':
 							$row[] = $data['quantity'];
@@ -992,6 +1207,9 @@ class ProcessStripePlAdmin extends Process implements ConfigurableModule {
 
 		// Pagination and Export
 		$out .= $this->renderPaginationRow($total, $perPage, $page, 'exportProducts');
+
+		// Add modal placeholder
+		$out .= $this->renderProductPurchasesModal();
 
 		return $out;
 	}
@@ -1094,8 +1312,9 @@ class ProcessStripePlAdmin extends Process implements ConfigurableModule {
 
 		// Header row
 		$headers = [];
+		$productLabels = $this->getProductColumnLabels();
 		foreach ($columns as $col) {
-			$headers[] = $this->availableProductsColumns[$col]['label'] ?? $col;
+			$headers[] = $productLabels[$col] ?? $this->availableProductsColumns[$col]['label'] ?? $col;
 		}
 		fputcsv($fp, $headers);
 
@@ -1139,5 +1358,737 @@ class ProcessStripePlAdmin extends Process implements ConfigurableModule {
 
 		fclose($fp);
 		exit;
+	}
+
+	/**
+	 * Customers overview - aggregated by customer
+	 */
+	public function ___executeCustomers(): string {
+		$this->headline($this->_('Customers Overview'));
+		$this->browserTitle($this->_('Customers'));
+
+		$out = $this->renderTabs('customers');
+
+		$input = $this->wire('input');
+		$users = $this->wire('users');
+		$pages = $this->wire('pages');
+
+		// Aggregate data per customer
+		$customerData = [];
+
+		foreach ($users->find("spl_purchases.count>0") as $user) {
+			$totalRevenue = 0;
+			$totalPurchases = 0;
+			$firstPurchase = PHP_INT_MAX;
+			$lastPurchase = 0;
+
+			foreach ($user->spl_purchases as $item) {
+				$purchaseDate = (int)$item->get('purchase_date');
+				$session = (array)$item->meta('stripe_session');
+				$lineItems = $session['line_items']['data'] ?? [];
+
+				$totalPurchases++;
+				if ($purchaseDate < $firstPurchase) $firstPurchase = $purchaseDate;
+				if ($purchaseDate > $lastPurchase) $lastPurchase = $purchaseDate;
+
+				// Calculate revenue from line items
+				foreach ($lineItems as $li) {
+					$totalRevenue += (int)($li['amount_total'] ?? 0);
+				}
+
+				// Add renewals
+				$renewals = (array)$item->meta('renewals');
+				foreach ($renewals as $scopeRenewals) {
+					foreach ((array)$scopeRenewals as $renewal) {
+						$totalRevenue += (int)($renewal['amount'] ?? 0);
+					}
+				}
+			}
+
+			if ($firstPurchase === PHP_INT_MAX) $firstPurchase = 0;
+
+			$customerData[] = [
+				'user' => $user,
+				'name' => $user->title ?: $user->name,
+				'email' => $user->email,
+				'total_purchases' => $totalPurchases,
+				'total_revenue' => $totalRevenue,
+				'first_purchase' => $firstPurchase,
+				'last_purchase' => $lastPurchase,
+			];
+		}
+
+		// Sort by total revenue descending
+		usort($customerData, fn($a, $b) => $b['total_revenue'] <=> $a['total_revenue']);
+
+		// Get configured columns
+		$columns = $this->customersColumns ?: self::getDefaults()['customersColumns'];
+		$perPage = (int)($this->itemsPerPage ?: 25);
+
+		// Pagination
+		$total = count($customerData);
+		$page = max(1, (int)$input->get('pg'));
+		$offset = ($page - 1) * $perPage;
+		$paginatedData = array_slice($customerData, $offset, $perPage);
+
+		// Render table
+		if (empty($customerData)) {
+			$out .= "<p>" . $this->_('No customers found.') . "</p>";
+		} else {
+			$table = $this->modules->get('MarkupAdminDataTable');
+			$table->setEncodeEntities(false);
+			$table->setSortable(true);
+
+			// Dynamic header
+			$headers = [];
+			$customerLabels = $this->getCustomerColumnLabels();
+			foreach ($columns as $col) {
+				$headers[] = $customerLabels[$col] ?? $this->availableCustomersColumns[$col]['label'] ?? $col;
+			}
+			$table->headerRow($headers);
+
+			// Dynamic rows
+			foreach ($paginatedData as $data) {
+				$row = [];
+				foreach ($columns as $col) {
+					switch ($col) {
+						case 'name':
+							$row[] = $this->renderCustomerName($data['name'], $data['user']->id);
+							break;
+						case 'email':
+							$row[] = $this->renderUserEmail($data['email']);
+							break;
+						case 'total_purchases':
+							$purchasesHtml = '<a href="#" class="show-customer-purchases" data-user-id="' . $data['user']->id . '" data-user-name="' . htmlspecialchars($data['name']) . '">' .
+								$data['total_purchases'] . '</a>';
+							$row[] = $purchasesHtml;
+							break;
+						case 'total_revenue':
+							$currency = $data['user']->spl_purchases->first() ?
+								strtoupper(((array)$data['user']->spl_purchases->first()->meta('stripe_session'))['currency'] ?? 'EUR') :
+								'EUR';
+							$row[] = $this->formatPrice($data['total_revenue'], $currency);
+							break;
+						case 'first_purchase':
+							$row[] = $data['first_purchase'] ? date('Y-m-d', $data['first_purchase']) : '-';
+							break;
+						case 'last_activity':
+							$days = $data['last_purchase'] ? floor((time() - $data['last_purchase']) / 86400) : '-';
+							$row[] = $days !== '-' ? sprintf($this->_('%d days ago'), $days) : '-';
+							break;
+						default:
+							$row[] = '';
+					}
+				}
+				$table->row($row);
+			}
+
+			$out .= "<div style='margin-top:-1px'>" . $table->render() . "</div>";
+		}
+
+		// Pagination and Export
+		$out .= $this->renderPaginationRow($total, $perPage, $page, 'exportCustomers');
+
+		// Add modal placeholder
+		$out .= $this->renderCustomerProductsModal();
+
+		return $out;
+	}
+
+	/**
+	 * Export customers to CSV
+	 */
+	public function ___executeExportCustomers(): void {
+		$users = $this->wire('users');
+		$pages = $this->wire('pages');
+
+		// Aggregate data (same as executeCustomers)
+		$customerData = [];
+
+		foreach ($users->find("spl_purchases.count>0") as $user) {
+			$totalRevenue = 0;
+			$totalPurchases = 0;
+			$firstPurchase = PHP_INT_MAX;
+			$lastPurchase = 0;
+
+			foreach ($user->spl_purchases as $item) {
+				$purchaseDate = (int)$item->get('purchase_date');
+				$session = (array)$item->meta('stripe_session');
+				$lineItems = $session['line_items']['data'] ?? [];
+
+				$totalPurchases++;
+				if ($purchaseDate < $firstPurchase) $firstPurchase = $purchaseDate;
+				if ($purchaseDate > $lastPurchase) $lastPurchase = $purchaseDate;
+
+				foreach ($lineItems as $li) {
+					$totalRevenue += (int)($li['amount_total'] ?? 0);
+				}
+
+				$renewals = (array)$item->meta('renewals');
+				foreach ($renewals as $scopeRenewals) {
+					foreach ((array)$scopeRenewals as $renewal) {
+						$totalRevenue += (int)($renewal['amount'] ?? 0);
+					}
+				}
+			}
+
+			if ($firstPurchase === PHP_INT_MAX) $firstPurchase = 0;
+
+			$customerData[] = [
+				'user' => $user,
+				'name' => $user->title ?: $user->name,
+				'email' => $user->email,
+				'total_purchases' => $totalPurchases,
+				'total_revenue' => $totalRevenue,
+				'first_purchase' => $firstPurchase,
+				'last_purchase' => $lastPurchase,
+			];
+		}
+
+		usort($customerData, fn($a, $b) => $b['total_revenue'] <=> $a['total_revenue']);
+
+		$columns = $this->customersColumns ?: self::getDefaults()['customersColumns'];
+
+		// Output CSV
+		header('Content-Type: text/csv; charset=utf-8');
+		header('Content-Disposition: attachment; filename="customers-' . date('Y-m-d-His') . '.csv"');
+
+		$fp = fopen('php://output', 'w');
+
+		// Header row
+		$headers = [];
+		$customerLabels = $this->getCustomerColumnLabels();
+		foreach ($columns as $col) {
+			$headers[] = $customerLabels[$col] ?? $this->availableCustomersColumns[$col]['label'] ?? $col;
+		}
+		fputcsv($fp, $headers);
+
+		// Data rows
+		foreach ($customerData as $data) {
+			$row = [];
+			foreach ($columns as $col) {
+				switch ($col) {
+					case 'name':
+						$row[] = $data['name'];
+						break;
+					case 'email':
+						$row[] = $data['email'];
+						break;
+					case 'total_purchases':
+						$row[] = $data['total_purchases'];
+						break;
+					case 'total_revenue':
+						$currency = $data['user']->spl_purchases->first() ?
+							strtoupper(((array)$data['user']->spl_purchases->first()->meta('stripe_session'))['currency'] ?? 'EUR') :
+							'EUR';
+						$cents = $data['total_revenue'];
+						$symbol = ($currency === 'EUR') ? '€' : $currency;
+						$row[] = $symbol . ' ' . number_format($cents / 100, 2, ',', '');
+						break;
+					case 'first_purchase':
+						$row[] = $data['first_purchase'] ? date('Y-m-d', $data['first_purchase']) : '';
+						break;
+					case 'last_activity':
+						$days = $data['last_purchase'] ? floor((time() - $data['last_purchase']) / 86400) : '';
+						$row[] = $days !== '' ? sprintf($this->_('%d days ago'), $days) : '';
+						break;
+					default:
+						$row[] = '';
+				}
+			}
+			fputcsv($fp, $row);
+		}
+
+		fclose($fp);
+		exit;
+	}
+
+	/**
+	 * AJAX endpoint to get customer purchases
+	 */
+	public function ___executeCustomerPurchases(): void {
+		$input = $this->wire('input');
+		$users = $this->wire('users');
+		$pages = $this->wire('pages');
+
+		$userId = (int)$input->get('user_id');
+		if (!$userId) {
+			echo '<p style="color:red;">' . $this->_('No user ID provided') . '</p>';
+			exit;
+		}
+
+		$user = $users->get($userId);
+		if (!$user || !$user->id) {
+			echo '<p style="color:red;">' . $this->_('User not found') . '</p>';
+			exit;
+		}
+
+		$purchasesData = [];
+		$purchaseCount = 0;
+		$renewalCount = 0;
+
+		foreach ($user->spl_purchases as $item) {
+			$purchaseDate = (int)$item->get('purchase_date');
+			$session = (array)$item->meta('stripe_session');
+			$lineItems = $session['line_items']['data'] ?? [];
+			$productIds = (array)$item->meta('product_ids');
+			$currency = strtoupper($session['currency'] ?? 'EUR');
+
+			// Process initial purchase items
+			foreach ($lineItems as $li) {
+				$stripeProductId = $li['price']['product']['id'] ?? ($li['price']['product'] ?? '');
+				if (is_array($stripeProductId)) $stripeProductId = $stripeProductId['id'] ?? '';
+
+				$productName = $li['price']['product']['name']
+					?? $li['description']
+					?? $li['price']['nickname']
+					?? 'Unknown';
+
+				// Find mapped page
+				$pageId = 0;
+				foreach ($productIds as $pid) {
+					$pid = (int)$pid;
+					if ($pid === 0) continue;
+					$p = $pages->get($pid);
+					if ($p && $p->id && $p->hasField('stripe_product_id') && $p->stripe_product_id === $stripeProductId) {
+						$pageId = $pid;
+						$productName = $p->title;
+						break;
+					}
+				}
+
+				// Get subscription status
+				$periodEndMap = (array)$item->meta('period_end_map');
+				$status = '-';
+				$periodEnd = '-';
+
+				$scopeKey = $pageId ?: ('0#' . $stripeProductId);
+				if (isset($periodEndMap[$scopeKey])) {
+					$periodEndTs = (int)$periodEndMap[$scopeKey];
+					$periodEnd = $periodEndTs ? date('Y-m-d', $periodEndTs) : '-';
+
+					if (isset($periodEndMap[$scopeKey . '_canceled'])) {
+						$status = 'Canceled';
+					} elseif (isset($periodEndMap[$scopeKey . '_paused'])) {
+						$status = 'Paused';
+					} elseif ($periodEndTs < time()) {
+						$status = 'Expired';
+					} else {
+						$status = 'Active';
+					}
+				}
+
+				$amount = (int)($li['amount_total'] ?? 0);
+				$quantity = (int)($li['quantity'] ?? 1);
+
+				// Determine type: if status is set (not '-'), it's a subscription
+				$type = ($status !== '-') ? 'Subscription' : 'Purchase';
+
+				$purchasesData[] = [
+					'date' => date('Y-m-d H:i', $purchaseDate),
+					'product' => $productName,
+					'type' => $type,
+					'status' => $status,
+					'period_end' => $periodEnd,
+					'timestamp' => $purchaseDate,
+					'amount' => $amount,
+					'currency' => $currency,
+					'quantity' => $quantity,
+				];
+
+				$purchaseCount++;
+			}
+
+			// Process renewals
+			$renewals = (array)$item->meta('renewals');
+			foreach ($renewals as $scopeKey => $scopeRenewals) {
+				// Determine product name from scope key
+				$productName = 'Unknown';
+				if (is_numeric($scopeKey) && (int)$scopeKey > 0) {
+					$p = $pages->get((int)$scopeKey);
+					if ($p && $p->id) {
+						$productName = $p->title;
+					}
+				} elseif (strpos($scopeKey, '0#') === 0) {
+					$stripeProductId = substr($scopeKey, 2);
+					// Try to find in line items
+					foreach ($lineItems as $li) {
+						$liStripeId = $li['price']['product']['id'] ?? ($li['price']['product'] ?? '');
+						if (is_array($liStripeId)) $liStripeId = $liStripeId['id'] ?? '';
+						if ($liStripeId === $stripeProductId) {
+							$productName = $li['price']['product']['name']
+								?? $li['description']
+								?? $li['price']['nickname']
+								?? 'Unknown';
+							break;
+						}
+					}
+				}
+
+				foreach ((array)$scopeRenewals as $renewal) {
+					$renewalDate = (int)($renewal['date'] ?? 0);
+					$renewalAmount = (int)($renewal['amount'] ?? 0);
+
+					// Get subscription status
+					$periodEndMap = (array)$item->meta('period_end_map');
+					$status = '-';
+					$periodEnd = '-';
+
+					if (isset($periodEndMap[$scopeKey])) {
+						$periodEndTs = (int)$periodEndMap[$scopeKey];
+						$periodEnd = $periodEndTs ? date('Y-m-d', $periodEndTs) : '-';
+
+						if (isset($periodEndMap[$scopeKey . '_canceled'])) {
+							$status = 'Canceled';
+						} elseif (isset($periodEndMap[$scopeKey . '_paused'])) {
+							$status = 'Paused';
+						} elseif ($periodEndTs < time()) {
+							$status = 'Expired';
+						} else {
+							$status = 'Active';
+						}
+					}
+
+					$purchasesData[] = [
+						'date' => $renewalDate ? date('Y-m-d H:i', $renewalDate) : '-',
+						'product' => $productName,
+						'type' => 'Renewal',
+						'status' => $status,
+						'period_end' => $periodEnd,
+						'timestamp' => $renewalDate,
+						'amount' => $renewalAmount,
+						'currency' => $currency,
+						'quantity' => 1,
+					];
+
+					$renewalCount++;
+				}
+			}
+		}
+
+		// Sort by timestamp descending
+		usort($purchasesData, function($a, $b) {
+			return $b['timestamp'] <=> $a['timestamp'];
+		});
+
+		if (empty($purchasesData)) {
+			echo '<p>' . $this->_('No purchases found for this customer.') . '</p>';
+			exit;
+		}
+
+		// Build title with counts
+		$userName = $user->title ?: $user->name;
+		$title = sprintf($this->_('Purchases - %s (%d Purchases, %d Renewals)'), $userName, $purchaseCount, $renewalCount);
+
+		// Render table using ProcessWire MarkupAdminDataTable
+		$table = $this->modules->get('MarkupAdminDataTable');
+		$table->setEncodeEntities(false);
+		$table->setSortable(true);
+		$table->setClass('uk-table-divider uk-table-small');
+
+		// Header
+		$table->headerRow([$this->_('Date'), $this->_('Product'), $this->_('Quantity'), $this->_('Amount'), $this->_('Type'), $this->_('Status'), $this->_('Period End')]);
+
+		// Rows
+		foreach ($purchasesData as $purchase) {
+			$table->row([
+				$purchase['date'],
+				htmlspecialchars($purchase['product']),
+				$purchase['quantity'],
+				$this->formatPrice($purchase['amount'], $purchase['currency']),
+				$purchase['type'],
+				$purchase['status'],
+				$purchase['period_end'],
+			]);
+		}
+
+		// Output title + table wrapped in UIkit structure
+		$out = '<h3 class="uk-modal-title">' . htmlspecialchars($title) . '</h3>';
+		$out .= $table->render();
+
+		echo $out;
+		exit;
+	}
+
+	/**
+	 * AJAX endpoint to get all purchases for a specific product
+	 */
+	public function ___executeProductPurchases(): void {
+		$input = $this->wire('input');
+		$users = $this->wire('users');
+		$pages = $this->wire('pages');
+
+		$productKey = $input->get->text('product_key');
+		if (!$productKey) {
+			echo '<p style="color:red;">' . $this->_('No product key provided') . '</p>';
+			exit;
+		}
+
+		// Determine if it's a page ID or stripe product
+		$isPageId = is_numeric($productKey);
+		$pageId = $isPageId ? (int)$productKey : 0;
+		$stripeProductId = $isPageId ? '' : (strpos($productKey, 'stripe:') === 0 ? substr($productKey, 7) : $productKey);
+
+		// Get product name
+		$productName = $this->_('Unknown Product');
+		if ($pageId > 0) {
+			$p = $pages->get($pageId);
+			if ($p && $p->id) {
+				$productName = $p->title;
+			}
+		}
+
+		$purchasesData = [];
+		$purchaseCount = 0;
+		$renewalCount = 0;
+
+		foreach ($users->find("spl_purchases.count>0") as $user) {
+			foreach ($user->spl_purchases as $item) {
+				$purchaseDate = (int)$item->get('purchase_date');
+				$session = (array)$item->meta('stripe_session');
+				$lineItems = $session['line_items']['data'] ?? [];
+				$productIds = (array)$item->meta('product_ids');
+				$currency = strtoupper($session['currency'] ?? 'EUR');
+
+				// Check if this purchase contains our product
+				foreach ($lineItems as $li) {
+					$liStripeId = $li['price']['product']['id'] ?? ($li['price']['product'] ?? '');
+					if (is_array($liStripeId)) $liStripeId = $liStripeId['id'] ?? '';
+
+					// Check if this line item matches our product
+					$matches = false;
+					if ($pageId > 0) {
+						// Check if page ID is in product_ids and stripe ID matches
+						foreach ($productIds as $pid) {
+							$pid = (int)$pid;
+							if ($pid === $pageId) {
+								$p = $pages->get($pid);
+								if ($p && $p->id && $p->hasField('stripe_product_id') && $p->stripe_product_id === $liStripeId) {
+									$matches = true;
+									$productName = $p->title;
+									break;
+								}
+							}
+						}
+					} else {
+						// Check stripe product ID
+						if ($liStripeId === $stripeProductId) {
+							$matches = true;
+							$productName = $li['price']['product']['name']
+								?? $li['description']
+								?? $li['price']['nickname']
+								?? 'Unknown';
+						}
+					}
+
+					if ($matches) {
+						$amount = (int)($li['amount_total'] ?? 0);
+						$quantity = (int)($li['quantity'] ?? 1);
+
+						// Get subscription status
+						$periodEndMap = (array)$item->meta('period_end_map');
+						$status = '-';
+						$scopeKey = $pageId ?: ('0#' . $liStripeId);
+						if (isset($periodEndMap[$scopeKey])) {
+							$periodEndTs = (int)$periodEndMap[$scopeKey];
+							if (isset($periodEndMap[$scopeKey . '_canceled'])) {
+								$status = 'Canceled';
+							} elseif (isset($periodEndMap[$scopeKey . '_paused'])) {
+								$status = 'Paused';
+							} elseif ($periodEndTs < time()) {
+								$status = 'Expired';
+							} else {
+								$status = 'Active';
+							}
+						}
+
+						// Determine type
+						$type = ($status !== '-') ? 'Subscription' : 'Purchase';
+
+						$purchasesData[] = [
+							'customer' => $user->title ?: $user->name,
+							'user_id' => $user->id,
+							'date' => date('Y-m-d H:i', $purchaseDate),
+							'amount' => $amount,
+							'currency' => $currency,
+							'type' => $type,
+							'timestamp' => $purchaseDate,
+						];
+
+						$purchaseCount++;
+					}
+				}
+
+				// Process renewals for this product
+				$renewals = (array)$item->meta('renewals');
+				$scopeKey = $pageId ?: ('0#' . $stripeProductId);
+
+				if (isset($renewals[$scopeKey])) {
+					foreach ((array)$renewals[$scopeKey] as $renewal) {
+						$renewalDate = (int)($renewal['date'] ?? 0);
+						$renewalAmount = (int)($renewal['amount'] ?? 0);
+
+						$purchasesData[] = [
+							'customer' => $user->title ?: $user->name,
+							'user_id' => $user->id,
+							'date' => $renewalDate ? date('Y-m-d H:i', $renewalDate) : '-',
+							'amount' => $renewalAmount,
+							'currency' => $currency,
+							'type' => 'Renewal',
+							'timestamp' => $renewalDate,
+						];
+
+						$renewalCount++;
+					}
+				}
+			}
+		}
+
+		// Sort by timestamp descending
+		usort($purchasesData, function($a, $b) {
+			return $b['timestamp'] <=> $a['timestamp'];
+		});
+
+		if (empty($purchasesData)) {
+			echo '<p>' . $this->_('No purchases found for this product.') . '</p>';
+			exit;
+		}
+
+		// Build title with counts
+		$title = sprintf($this->_('Purchases - %s (%d Purchases, %d Renewals)'), $productName, $purchaseCount, $renewalCount);
+
+		// Render table using ProcessWire MarkupAdminDataTable
+		$table = $this->modules->get('MarkupAdminDataTable');
+		$table->setEncodeEntities(false);
+		$table->setSortable(true);
+		$table->setClass('uk-table-divider uk-table-small');
+
+		// Header
+		$table->headerRow([$this->_('Customer'), $this->_('Date'), $this->_('Amount'), $this->_('Type')]);
+
+		// Rows
+		foreach ($purchasesData as $purchase) {
+			$table->row([
+				$this->renderCustomerName($purchase['customer'], $purchase['user_id']),
+				$purchase['date'],
+				$this->formatPrice($purchase['amount'], $purchase['currency']),
+				$purchase['type'],
+			]);
+		}
+
+		// Output title + table
+		$out = '<h3 class="uk-modal-title">' . htmlspecialchars($title) . '</h3>';
+		$out .= $table->render();
+
+		echo $out;
+		exit;
+	}
+
+	/**
+	 * Render modal placeholder for customer purchases
+	 */
+	protected function renderCustomerProductsModal(): string {
+		$baseUrl = $this->page->url;
+		$modalId = 'modal_' . uniqid();
+		$loading = $this->_('Loading...');
+		$loadingPurchases = $this->_('Loading purchases...');
+		$error = $this->_('Error');
+		$errorLoading = $this->_('Error loading purchases');
+
+		return <<<HTML
+		<div id="{$modalId}" class="uk-modal-container" uk-modal>
+			<div class="uk-modal-dialog uk-modal-body">
+				<button class="uk-modal-close-default" type="button" uk-close></button>
+				<div id="customer-purchases-content">
+					<h3 class="uk-modal-title">{$loading}</h3>
+					<p>{$loadingPurchases}</p>
+				</div>
+			</div>
+		</div>
+		<script>
+		document.addEventListener('click', function(e) {
+			if (e.target.classList.contains('show-customer-purchases')) {
+				e.preventDefault();
+				var userId = e.target.getAttribute('data-user-id');
+
+				// Show modal
+				UIkit.modal('#{$modalId}').show();
+
+				// Set loading state
+				document.getElementById('customer-purchases-content').innerHTML = '<h3 class="uk-modal-title">{$loading}</h3><p>{$loadingPurchases}</p>';
+
+				// Fetch purchases via AJAX (returns title + table)
+				fetch('{$baseUrl}customerPurchases/?user_id=' + userId)
+					.then(function(response) { return response.text(); })
+					.then(function(html) {
+						document.getElementById('customer-purchases-content').innerHTML = html;
+
+						// Initialize tablesorter on the dynamically loaded table
+						var table = document.querySelector('#customer-purchases-content table');
+						if (table && typeof jQuery !== 'undefined' && jQuery.fn.tablesorter) {
+							jQuery(table).tablesorter();
+						}
+					})
+					.catch(function(error) {
+						document.getElementById('customer-purchases-content').innerHTML = '<h3 class="uk-modal-title">{$error}</h3><p style="color:red;">{$errorLoading}</p>';
+					});
+			}
+		});
+		</script>
+		HTML;
+	}
+
+	/**
+	 * Render modal for product purchases
+	 */
+	protected function renderProductPurchasesModal(): string {
+		$baseUrl = $this->page->url;
+		$modalId = 'modal_product_' . uniqid();
+		$loading = $this->_('Loading...');
+		$loadingPurchases = $this->_('Loading purchases...');
+		$error = $this->_('Error');
+		$errorLoading = $this->_('Error loading purchases');
+
+		return <<<HTML
+		<div id="{$modalId}" class="uk-modal-container" uk-modal>
+			<div class="uk-modal-dialog uk-modal-body">
+				<button class="uk-modal-close-default" type="button" uk-close></button>
+				<div id="product-purchases-content">
+					<h3 class="uk-modal-title">{$loading}</h3>
+					<p>{$loadingPurchases}</p>
+				</div>
+			</div>
+		</div>
+		<script>
+		document.addEventListener('click', function(e) {
+			if (e.target.classList.contains('show-product-purchases')) {
+				e.preventDefault();
+				var productKey = e.target.getAttribute('data-product-key');
+
+				// Show modal
+				UIkit.modal('#{$modalId}').show();
+
+				// Set loading state
+				document.getElementById('product-purchases-content').innerHTML = '<h3 class="uk-modal-title">{$loading}</h3><p>{$loadingPurchases}</p>';
+
+				// Fetch purchases via AJAX (returns title + table)
+				fetch('{$baseUrl}productPurchases/?product_key=' + encodeURIComponent(productKey))
+					.then(function(response) { return response.text(); })
+					.then(function(html) {
+						document.getElementById('product-purchases-content').innerHTML = html;
+
+						// Initialize tablesorter on the dynamically loaded table
+						var table = document.querySelector('#product-purchases-content table');
+						if (table && typeof jQuery !== 'undefined' && jQuery.fn.tablesorter) {
+							jQuery(table).tablesorter();
+						}
+					})
+					.catch(function(error) {
+						document.getElementById('product-purchases-content').innerHTML = '<h3 class="uk-modal-title">{$error}</h3><p style="color:red;">{$errorLoading}</p>';
+					});
+			}
+		});
+		</script>
+		HTML;
 	}
 }
