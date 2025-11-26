@@ -1725,8 +1725,9 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$baseUrl = $this->page->url;
 		$modalId = 'modal_' . uniqid();
 		return <<<HTML
-		<div id="{$modalId}" class="uk-modal-container uk-modal" uk-modal="" tabindex="-1">
-			<div class="uk-modal-dialog uk-modal-body" role="dialog" aria-modal="true">
+		<div id="{$modalId}" class="uk-modal-container" uk-modal>
+			<div class="uk-modal-dialog uk-modal-body">
+				<button class="uk-modal-close-default" type="button" uk-close></button>
 				<div id="customer-purchases-content">
 					<h3 class="uk-modal-title">Loading...</h3>
 					<p>Loading purchases...</p>
