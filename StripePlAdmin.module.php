@@ -1592,10 +1592,13 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 				$amount = (int)($li['amount_total'] ?? 0);
 				$quantity = (int)($li['quantity'] ?? 1);
 
+				// Determine type: if status is set (not '-'), it's a subscription
+				$type = ($status !== '-') ? 'Subscription' : 'Purchase';
+
 				$purchasesData[] = [
 					'date' => date('Y-m-d H:i', $purchaseDate),
 					'product' => $productName,
-					'type' => 'Purchase',
+					'type' => $type,
 					'status' => $status,
 					'period_end' => $periodEnd,
 					'timestamp' => $purchaseDate,
