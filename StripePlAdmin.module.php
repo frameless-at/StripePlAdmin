@@ -569,8 +569,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		switch ($type) {
 			case 'user':
 				if ($column === 'user_email') {
-					$email = (string)$user->email;
-					return $email ? "<a href='mailto:{$email}'>{$email}</a>" : '';
+					return $this->renderUserEmail((string)$user->email);
 				}
 				if ($column === 'user_name') return (string)$user->title;
 				break;
@@ -671,6 +670,23 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	}
 
 	/**
+	 * Render user email with mailto link
+	 */
+	protected function renderUserEmail(string $email): string {
+		if (!$email) return '';
+		return "<a href='mailto:{$email}'>{$email}</a>";
+	}
+
+	/**
+	 * Render customer name with link to user
+	 */
+	protected function renderCustomerName(string $customerName, int $userId): string {
+		if (!$customerName) return '';
+		$editUrl = $this->wire('config')->urls->admin . "access/users/edit/?id={$userId}";
+		return "<a href='{$editUrl}'>{$customerName}</a>";
+	}
+
+	/**
 	 * Compute shipping address
 	 */
 	protected function computeShippingAddress(User $user, Page $item): string {
@@ -696,11 +712,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	protected function computeCustomerName(User $user, Page $item): string {
 		$session = (array)$item->meta('stripe_session');
 		$customerName = $session['customer']['name'] ?? '';
-
-		if (!$customerName) return '';
-
-		$editUrl = $this->wire('config')->urls->admin . "access/users/edit/?id={$user->id}";
-		return "<a href='{$editUrl}'>{$customerName}</a>";
+		return $this->renderCustomerName($customerName, $user->id);
 	}
 
 	/**
@@ -1386,10 +1398,10 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 				foreach ($columns as $col) {
 					switch ($col) {
 						case 'name':
-							$row[] = htmlspecialchars($data['name']);
+							$row[] = $this->renderCustomerName($data['name'], $data['user']->id);
 							break;
 						case 'email':
-							$row[] = htmlspecialchars($data['email']);
+							$row[] = $this->renderUserEmail($data['email']);
 							break;
 						case 'total_purchases':
 							$purchasesHtml = '<a href="#" class="show-customer-purchases" data-user-id="' . $data['user']->id . '" data-user-name="' . htmlspecialchars($data['name']) . '">' .
@@ -1839,6 +1851,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 						$purchasesData[] = [
 							'customer' => $user->title ?: $user->name,
+							'user_id' => $user->id,
 							'date' => date('Y-m-d H:i', $purchaseDate),
 							'amount' => $amount,
 							'currency' => $currency,
@@ -1861,6 +1874,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 						$purchasesData[] = [
 							'customer' => $user->title ?: $user->name,
+							'user_id' => $user->id,
 							'date' => $renewalDate ? date('Y-m-d H:i', $renewalDate) : '-',
 							'amount' => $renewalAmount,
 							'currency' => $currency,
@@ -1899,7 +1913,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		// Rows
 		foreach ($purchasesData as $purchase) {
 			$table->row([
-				htmlspecialchars($purchase['customer']),
+				$this->renderCustomerName($purchase['customer'], $purchase['user_id']),
 				$purchase['date'],
 				$this->formatPrice($purchase['amount'], $purchase['currency']),
 				$purchase['type'],
