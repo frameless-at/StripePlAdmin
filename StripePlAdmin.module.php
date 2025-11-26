@@ -774,8 +774,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	 * Compute customer name with link to user
 	 */
 	protected function computeCustomerName(User $user, Page $item): string {
-		$session = (array)$item->meta('stripe_session');
-		$customerName = $session['customer']['name'] ?? '';
+		$customerName = $user->title ?: $user->name;
 		return $this->renderCustomerName($customerName, $user->id);
 	}
 
