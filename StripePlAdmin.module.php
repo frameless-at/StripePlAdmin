@@ -319,7 +319,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$f->name = 'itemsPerPage';
 		$f->label = $instance->_('Items per page');
 		$f->value = $data['itemsPerPage'];
-		$f->max = 500;
+		$f->max = 1000;
 		$tab4->add($f);
 
 		$wrapper->add($tab4);
