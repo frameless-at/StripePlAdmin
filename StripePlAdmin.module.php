@@ -350,8 +350,19 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			}
 		}
 
-		// Sort by date descending
-		usort($allPurchases, fn($a, $b) => $b['date'] <=> $a['date']);
+		// Sort by first selected column
+		$firstColumn = $columns[0] ?? 'purchase_date';
+		$descending = $this->shouldSortDescending($firstColumn);
+
+		usort($allPurchases, function($a, $b) use ($firstColumn, $descending) {
+			// Get values for comparison
+			$valA = $this->getColumnSortValue($a['user'], $a['item'], $firstColumn);
+			$valB = $this->getColumnSortValue($b['user'], $b['item'], $firstColumn);
+
+			// Compare
+			$cmp = $valA <=> $valB;
+			return $descending ? -$cmp : $cmp;
+		});
 
 		// Pagination
 		$total = count($allPurchases);
@@ -766,6 +777,62 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	}
 
 	/**
+	 * Determine if a column should be sorted descending (dates, money, numbers) or ascending (strings)
+	 */
+	protected function shouldSortDescending(string $column): bool {
+		// Columns that should be sorted descending (dates, money, numeric values)
+		$descendingColumns = [
+			// Dates
+			'purchase_date', 'period_end', 'last_renewal', 'last_purchase', 'first_purchase', 'last_activity',
+			// Money
+			'amount_total', 'revenue', 'total_revenue',
+			// Numeric
+			'purchases', 'quantity', 'total_purchases', 'renewals', 'line_items_count', 'renewal_count',
+		];
+
+		return in_array($column, $descendingColumns, true);
+	}
+
+	/**
+	 * Get sortable value for a column (for Purchases table)
+	 */
+	protected function getColumnSortValue(User $user, Page $item, string $column) {
+		// Special handling for specific columns
+		if ($column === 'purchase_date') {
+			return (int)$item->get('purchase_date');
+		}
+
+		if ($column === 'amount_total') {
+			$session = (array)$item->meta('stripe_session');
+			$lineItems = $session['line_items']['data'] ?? [];
+			$total = 0;
+			foreach ($lineItems as $li) {
+				$total += (int)($li['amount_total'] ?? 0);
+			}
+			// Add renewal amounts
+			$renewals = (array)$item->meta('renewals');
+			foreach ($renewals as $scopeRenewals) {
+				foreach ((array)$scopeRenewals as $renewal) {
+					$total += (int)($renewal['amount'] ?? 0);
+				}
+			}
+			return $total;
+		}
+
+		if ($column === 'user_email') {
+			return strtolower($user->email);
+		}
+
+		if ($column === 'user_name') {
+			return strtolower($user->title ?: $user->name);
+		}
+
+		// For all other columns, get the display value and convert to lowercase for string sorting
+		$value = $this->getColumnValue($user, $item, $column);
+		return is_numeric($value) ? (float)$value : strtolower($value);
+	}
+
+	/**
 	 * Render user email with mailto link
 	 */
 	protected function renderUserEmail(string $email): string {
@@ -1173,11 +1240,29 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			}
 		}
 
-		// Sort by count descending
-		uasort($productData, fn($a, $b) => $b['count'] <=> $a['count']);
-
 		// Get configured columns
 		$columns = $this->productsColumns ?: self::getDefaults()['productsColumns'];
+
+		// Sort by first selected column
+		$firstColumn = $columns[0] ?? 'name';
+		$descending = $this->shouldSortDescending($firstColumn);
+
+		uasort($productData, function($a, $b) use ($firstColumn, $descending) {
+			// Map column name to data key
+			$dataKey = $firstColumn === 'purchases' ? 'count' : $firstColumn;
+
+			// Get values for comparison
+			$valA = $a[$dataKey] ?? '';
+			$valB = $b[$dataKey] ?? '';
+
+			// Convert strings to lowercase for case-insensitive sorting
+			if (is_string($valA)) $valA = strtolower($valA);
+			if (is_string($valB)) $valB = strtolower($valB);
+
+			// Compare
+			$cmp = $valA <=> $valB;
+			return $descending ? -$cmp : $cmp;
+		});
 		$perPage = (int)($this->itemsPerPage ?: 25);
 
 		// Pagination
@@ -1461,11 +1546,29 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			];
 		}
 
-		// Sort by total revenue descending
-		usort($customerData, fn($a, $b) => $b['total_revenue'] <=> $a['total_revenue']);
-
 		// Get configured columns
 		$columns = $this->customersColumns ?: self::getDefaults()['customersColumns'];
+
+		// Sort by first selected column
+		$firstColumn = $columns[0] ?? 'name';
+		$descending = $this->shouldSortDescending($firstColumn);
+
+		usort($customerData, function($a, $b) use ($firstColumn, $descending) {
+			// Map column name to data key (last_activity is computed from last_purchase)
+			$dataKey = $firstColumn === 'last_activity' ? 'last_purchase' : $firstColumn;
+
+			// Get values for comparison
+			$valA = $a[$dataKey] ?? '';
+			$valB = $b[$dataKey] ?? '';
+
+			// Convert strings to lowercase for case-insensitive sorting
+			if (is_string($valA)) $valA = strtolower($valA);
+			if (is_string($valB)) $valB = strtolower($valB);
+
+			// Compare
+			$cmp = $valA <=> $valB;
+			return $descending ? -$cmp : $cmp;
+		});
 		$perPage = (int)($this->itemsPerPage ?: 25);
 
 		// Pagination
