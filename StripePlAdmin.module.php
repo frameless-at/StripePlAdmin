@@ -198,8 +198,8 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		return [
 			'name' => $this->_('Name'),
 			'email' => $this->_('Email'),
-			'total_revenue' => $this->_('Total Revenue'),
-			'total_purchases' => $this->_('Total Purchases'),
+			'total_revenue' => $this->_('Revenue'),
+			'total_purchases' => $this->_('Purchases'),
 			'first_purchase' => $this->_('First Purchase'),
 		];
 	}
@@ -901,10 +901,10 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			// Number filters (min/max)
 			'amount_total' => ['type' => 'number_range', 'label' => $this->_('Amount')],
 			'revenue' => ['type' => 'number_range', 'label' => $this->_('Revenue')],
-			'total_revenue' => ['type' => 'number_range', 'label' => $this->_('Total Revenue')],
+			'total_revenue' => ['type' => 'number_range', 'label' => $this->_('Revenue')],
 			'quantity' => ['type' => 'number_range', 'label' => $this->_('Quantity')],
 			'purchases' => ['type' => 'number_range', 'label' => $this->_('Purchases')],
-			'total_purchases' => ['type' => 'number_range', 'label' => $this->_('Total Purchases')],
+			'total_purchases' => ['type' => 'number_range', 'label' => $this->_('Purchases')],
 			'renewal_count' => ['type' => 'number_range', 'label' => $this->_('Renewals')],
 			'renewals' => ['type' => 'number_range', 'label' => $this->_('Renewals')],
 			'line_items_count' => ['type' => 'number_range', 'label' => $this->_('Items')],
