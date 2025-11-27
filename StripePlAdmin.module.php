@@ -1019,7 +1019,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		foreach ($configuredFilters as $filterName) {
 			// Check if this filter has a matching column OR is a column-independent filter
 			$hasMatchingColumn = in_array($filterName, $columns, true);
-			$isIndependentFilter = in_array($filterName, ['purchase_period'], true); // Filters that don't require a column
+			$isIndependentFilter = in_array($filterName, ['purchase_period', 'purchase_date'], true); // Filters that don't require a column
 
 			if (!$hasMatchingColumn && !$isIndependentFilter) {
 				continue;
@@ -1661,9 +1661,11 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$pages = $this->wire('pages');
 		$sanitizer = $this->wire('sanitizer');
 
-		// Get purchase period filter if set
-		$periodFrom = $sanitizer->text($input->get('filter_purchase_period_from'));
-		$periodTo = $sanitizer->text($input->get('filter_purchase_period_to'));
+		// Get purchase period filter if set (support both 'purchase_period' and 'purchase_date')
+		$periodFrom = $sanitizer->text($input->get('filter_purchase_period_from'))
+			?: $sanitizer->text($input->get('filter_purchase_date_from'));
+		$periodTo = $sanitizer->text($input->get('filter_purchase_period_to'))
+			?: $sanitizer->text($input->get('filter_purchase_date_to'));
 		$periodFromTs = $periodFrom ? strtotime($periodFrom) : null;
 		$periodToTs = $periodTo ? strtotime($periodTo . ' 23:59:59') : null;
 
@@ -1767,8 +1769,8 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		// Parse filter values for products
 		$filters = [];
 		foreach ($columns as $column) {
-			// Skip purchase_period - already handled in aggregation
-			if ($column === 'purchase_period') continue;
+			// Skip purchase_period and purchase_date - already handled in aggregation
+			if ($column === 'purchase_period' || $column === 'purchase_date') continue;
 
 			$config = $this->getFilterConfigForColumn($column, 'products');
 			if (!$config) continue;
@@ -1962,9 +1964,11 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$pages = $this->wire('pages');
 		$sanitizer = $this->wire('sanitizer');
 
-		// Get purchase period filter if set
-		$periodFrom = $sanitizer->text($input->get('filter_purchase_period_from'));
-		$periodTo = $sanitizer->text($input->get('filter_purchase_period_to'));
+		// Get purchase period filter if set (support both 'purchase_period' and 'purchase_date')
+		$periodFrom = $sanitizer->text($input->get('filter_purchase_period_from'))
+			?: $sanitizer->text($input->get('filter_purchase_date_from'));
+		$periodTo = $sanitizer->text($input->get('filter_purchase_period_to'))
+			?: $sanitizer->text($input->get('filter_purchase_date_to'));
 		$periodFromTs = $periodFrom ? strtotime($periodFrom) : null;
 		$periodToTs = $periodTo ? strtotime($periodTo . ' 23:59:59') : null;
 
