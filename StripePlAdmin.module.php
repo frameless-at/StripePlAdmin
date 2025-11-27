@@ -70,7 +70,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			'productsColumns' => ['name', 'purchases', 'quantity', 'revenue', 'last_purchase'],
 			'customersColumns' => ['name', 'email', 'total_purchases', 'total_revenue', 'first_purchase', 'last_activity'],
 			'purchasesFilters' => ['user_email', 'user_name', 'purchase_date', 'product_titles', 'amount_total'],
-			'productsFilters' => ['name', 'revenue', 'purchases', 'quantity', 'last_purchase'],
+			'productsFilters' => ['name', 'revenue', 'purchases', 'quantity', 'purchase_period'],
 			'customersFilters' => ['name', 'email', 'total_revenue', 'total_purchases', 'first_purchase'],
 			'itemsPerPage' => 25,
 		];
@@ -187,6 +187,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			'purchases' => $this->_('Purchases'),
 			'quantity' => $this->_('Quantity'),
 			'renewals' => $this->_('Renewals'),
+			'purchase_period' => $this->_('Purchase Period'),
 			'last_purchase' => $this->_('Last Purchase'),
 		];
 	}
@@ -893,6 +894,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 			// Date filters
 			'purchase_date' => ['type' => 'date_range', 'label' => $this->_('Purchase Date')],
+			'purchase_period' => ['type' => 'date_range', 'label' => $this->_('Purchase Period')],
 			'last_purchase' => ['type' => 'date_range', 'label' => $this->_('Last Purchase')],
 			'first_purchase' => ['type' => 'date_range', 'label' => $this->_('First Purchase')],
 			'period_end' => ['type' => 'date_range', 'label' => $this->_('Period End')],
@@ -1580,15 +1582,26 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$pages = $this->wire('pages');
 		$sanitizer = $this->wire('sanitizer');
 
+		// Get purchase period filter if set
+		$periodFrom = $sanitizer->text($input->get('filter_purchase_period_from'));
+		$periodTo = $sanitizer->text($input->get('filter_purchase_period_to'));
+		$periodFromTs = $periodFrom ? strtotime($periodFrom) : null;
+		$periodToTs = $periodTo ? strtotime($periodTo . ' 23:59:59') : null;
+
 		// Aggregate data per product
 		$productData = [];
 
 		foreach ($users->find("spl_purchases.count>0") as $user) {
 			foreach ($user->spl_purchases as $item) {
+				$purchaseDate = (int)$item->get('purchase_date');
+
+				// Apply purchase period filter early
+				if ($periodFromTs && $purchaseDate < $periodFromTs) continue;
+				if ($periodToTs && $purchaseDate > $periodToTs) continue;
+
 				$session = (array)$item->meta('stripe_session');
 				$lineItems = $session['line_items']['data'] ?? [];
 				$productIds = (array)$item->meta('product_ids');
-				$purchaseDate = (int)$item->get('purchase_date');
 
 				// Process each line item
 				foreach ($lineItems as $li) {
@@ -1675,6 +1688,9 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		// Parse filter values for products
 		$filters = [];
 		foreach ($columns as $column) {
+			// Skip purchase_period - already handled in aggregation
+			if ($column === 'purchase_period') continue;
+
 			$config = $this->getFilterConfigForColumn($column, 'products');
 			if (!$config) continue;
 
@@ -1810,18 +1826,31 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	 * Export products to CSV
 	 */
 	public function ___executeExportProducts(): void {
+		$input = $this->wire('input');
 		$users = $this->wire('users');
 		$pages = $this->wire('pages');
+		$sanitizer = $this->wire('sanitizer');
+
+		// Get purchase period filter if set
+		$periodFrom = $sanitizer->text($input->get('filter_purchase_period_from'));
+		$periodTo = $sanitizer->text($input->get('filter_purchase_period_to'));
+		$periodFromTs = $periodFrom ? strtotime($periodFrom) : null;
+		$periodToTs = $periodTo ? strtotime($periodTo . ' 23:59:59') : null;
 
 		// Aggregate data (same as executeProducts)
 		$productData = [];
 
 		foreach ($users->find("spl_purchases.count>0") as $user) {
 			foreach ($user->spl_purchases as $item) {
+				$purchaseDate = (int)$item->get('purchase_date');
+
+				// Apply purchase period filter early
+				if ($periodFromTs && $purchaseDate < $periodFromTs) continue;
+				if ($periodToTs && $purchaseDate > $periodToTs) continue;
+
 				$session = (array)$item->meta('stripe_session');
 				$lineItems = $session['line_items']['data'] ?? [];
 				$productIds = (array)$item->meta('product_ids');
-				$purchaseDate = (int)$item->get('purchase_date');
 
 				foreach ($lineItems as $li) {
 					$stripeProductId = $li['price']['product']['id'] ?? ($li['price']['product'] ?? '');
