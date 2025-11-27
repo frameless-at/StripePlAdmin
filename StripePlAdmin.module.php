@@ -2680,6 +2680,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$input = $this->wire('input');
 		$users = $this->wire('users');
 		$pages = $this->wire('pages');
+		$sanitizer = $this->wire('sanitizer');
 
 		$productKey = $input->get->text('product_key');
 		if (!$productKey) {
@@ -2701,6 +2702,14 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			}
 		}
 
+		// Get purchase period filter if set (support both 'purchase_period' and 'purchase_date')
+		$periodFrom = $sanitizer->text($input->get('filter_purchase_period_from'))
+			?: $sanitizer->text($input->get('filter_purchase_date_from'));
+		$periodTo = $sanitizer->text($input->get('filter_purchase_period_to'))
+			?: $sanitizer->text($input->get('filter_purchase_date_to'));
+		$periodFromTs = $periodFrom ? strtotime($periodFrom) : null;
+		$periodToTs = $periodTo ? strtotime($periodTo . ' 23:59:59') : null;
+
 		$purchasesData = [];
 		$purchaseCount = 0;
 		$renewalCount = 0;
@@ -2708,6 +2717,11 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		foreach ($users->find("spl_purchases.count>0") as $user) {
 			foreach ($user->spl_purchases as $item) {
 				$purchaseDate = (int)$item->get('purchase_date');
+
+				// Apply purchase period filter early
+				if ($periodFromTs && $purchaseDate < $periodFromTs) continue;
+				if ($periodToTs && $purchaseDate > $periodToTs) continue;
+
 				$session = (array)$item->meta('stripe_session');
 				$lineItems = $session['line_items']['data'] ?? [];
 				$productIds = (array)$item->meta('product_ids');
@@ -2789,6 +2803,11 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 				if (isset($renewals[$scopeKey])) {
 					foreach ((array)$renewals[$scopeKey] as $renewal) {
 						$renewalDate = (int)($renewal['date'] ?? 0);
+
+						// Apply purchase period filter to renewals
+						if ($periodFromTs && $renewalDate < $periodFromTs) continue;
+						if ($periodToTs && $renewalDate > $periodToTs) continue;
+
 						$renewalAmount = (int)($renewal['amount'] ?? 0);
 
 						$purchasesData[] = [
@@ -2934,8 +2953,23 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 				// Set loading state
 				document.getElementById('product-purchases-content').innerHTML = '<h3 class="uk-modal-title">{$loading}</h3><p>{$loadingPurchases}</p>';
 
+				// Collect current filter parameters from URL
+				var urlParams = new URLSearchParams(window.location.search);
+				var filterParams = '';
+
+				// Add date filter parameters if they exist
+				var dateFrom = urlParams.get('filter_purchase_period_from') || urlParams.get('filter_purchase_date_from');
+				var dateTo = urlParams.get('filter_purchase_period_to') || urlParams.get('filter_purchase_date_to');
+
+				if (dateFrom) {
+					filterParams += '&filter_purchase_period_from=' + encodeURIComponent(dateFrom);
+				}
+				if (dateTo) {
+					filterParams += '&filter_purchase_period_to=' + encodeURIComponent(dateTo);
+				}
+
 				// Fetch purchases via AJAX (returns title + table)
-				fetch('{$baseUrl}productPurchases/?product_key=' + encodeURIComponent(productKey))
+				fetch('{$baseUrl}productPurchases/?product_key=' + encodeURIComponent(productKey) + filterParams)
 					.then(function(response) { return response.text(); })
 					.then(function(html) {
 						document.getElementById('product-purchases-content').innerHTML = html;
