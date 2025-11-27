@@ -474,6 +474,10 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		}
 		$table->headerRow($headerRow);
 
+		// Track summable values
+		$sums = [];
+		$currency = '';
+
 		// Rows
 		foreach ($purchases as $purchase) {
 			$row = [];
@@ -483,7 +487,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 					$session = (array)$purchase['item']->meta('stripe_session');
 					$lineItems = $session['line_items']['data'] ?? [];
 					$total = 0;
-					$currency = '';
+					if (!$currency) $currency = strtoupper($session['currency'] ?? 'EUR');
 					foreach ($lineItems as $li) {
 						$total += (int)($li['amount_total'] ?? 0);
 						if (!$currency) $currency = strtoupper($li['currency'] ?? $session['currency'] ?? '');
@@ -495,12 +499,48 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 							$total += (int)($renewal['amount'] ?? 0);
 						}
 					}
+
+					// Track sum
+					if (!isset($sums[$col])) $sums[$col] = 0;
+					$sums[$col] += $total;
+
 					$row[] = $total > 0 ? $this->formatPrice($total, $currency) : '';
 				} else {
-					$row[] = $this->getColumnValue($purchase['user'], $purchase['item'], $col);
+					$value = $this->getColumnValue($purchase['user'], $purchase['item'], $col);
+					$row[] = $value;
+
+					// Track sums for summable columns
+					if ($this->isColumnSummable($col)) {
+						$numericValue = strip_tags($value);
+						$numericValue = (int)preg_replace('/[^0-9]/', '', $numericValue);
+						if (!isset($sums[$col])) $sums[$col] = 0;
+						$sums[$col] += $numericValue;
+					}
 				}
 			}
 			$table->row($row);
+		}
+
+		// Add summary row if we have summable data
+		if (!empty($sums)) {
+			$summaryRow = [];
+			$firstCol = true;
+			foreach ($columns as $col) {
+				if ($firstCol) {
+					$summaryRow[] = '<strong>' . $this->_('Total') . '</strong>';
+					$firstCol = false;
+				} elseif (isset($sums[$col])) {
+					$value = $sums[$col];
+					if ($this->getColumnSummaryType($col) === 'money') {
+						$summaryRow[] = '<strong>' . $this->formatPrice($value, $currency) . '</strong>';
+					} else {
+						$summaryRow[] = '<strong>' . number_format($value, 0, ',', '.') . '</strong>';
+					}
+				} else {
+					$summaryRow[] = '';
+				}
+			}
+			$table->row($summaryRow);
 		}
 
 		return $table->render();
@@ -689,6 +729,28 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		if (!$customerName) return '';
 		$editUrl = $this->wire('config')->urls->admin . "access/users/edit/?id={$userId}";
 		return "<a href='{$editUrl}'>{$customerName}</a>";
+	}
+
+	/**
+	 * Check if a column is summable (money or count values)
+	 */
+	protected function isColumnSummable(string $column, string $context = 'purchases'): bool {
+		$summableColumns = [
+			// Money columns
+			'amount_total', 'revenue', 'total_revenue',
+			// Count/quantity columns
+			'purchases', 'total_purchases', 'quantity', 'renewals', 'renewal_count', 'line_items_count',
+		];
+
+		return in_array($column, $summableColumns, true);
+	}
+
+	/**
+	 * Get column type for summary (money or count)
+	 */
+	protected function getColumnSummaryType(string $column): string {
+		$moneyColumns = ['amount_total', 'revenue', 'total_revenue'];
+		return in_array($column, $moneyColumns, true) ? 'money' : 'count';
 	}
 
 	/**
@@ -1771,6 +1833,29 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			}
 			$table->headerRow($headers);
 
+			// Calculate sums from ALL products (not just paginated)
+			$sums = [];
+			$currency = '';
+			foreach ($productData as $data) {
+				if (!$currency && isset($data['currency'])) {
+					$currency = $data['currency'];
+				}
+
+				// Track summable columns
+				if (isset($data['revenue'])) {
+					$sums['revenue'] = ($sums['revenue'] ?? 0) + $data['revenue'];
+				}
+				if (isset($data['count'])) {
+					$sums['purchases'] = ($sums['purchases'] ?? 0) + $data['count'];
+				}
+				if (isset($data['quantity'])) {
+					$sums['quantity'] = ($sums['quantity'] ?? 0) + $data['quantity'];
+				}
+				if (isset($data['renewals'])) {
+					$sums['renewals'] = ($sums['renewals'] ?? 0) + $data['renewals'];
+				}
+			}
+
 			// Dynamic rows
 			foreach ($paginatedData as $key => $data) {
 				$row = [];
@@ -1812,6 +1897,30 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 					}
 				}
 				$table->row($row);
+			}
+
+			// Add summary row if we have summable data
+			if (!empty($sums)) {
+				$summaryRow = [];
+				$firstCol = true;
+				foreach ($columns as $col) {
+					if ($firstCol) {
+						$summaryRow[] = '<strong>' . $this->_('Total') . '</strong>';
+						$firstCol = false;
+					} elseif ($col === 'purchases' && isset($sums['purchases'])) {
+						$summaryRow[] = '<strong>' . number_format($sums['purchases'], 0, ',', '.') . '</strong>';
+					} elseif (isset($sums[$col])) {
+						$value = $sums[$col];
+						if ($this->getColumnSummaryType($col) === 'money') {
+							$summaryRow[] = '<strong>' . $this->formatPrice($value, $currency) . '</strong>';
+						} else {
+							$summaryRow[] = '<strong>' . number_format($value, 0, ',', '.') . '</strong>';
+						}
+					} else {
+						$summaryRow[] = '';
+					}
+				}
+				$table->row($summaryRow);
 			}
 
 			$out .= "<div style='margin-top:-1px'>" . $table->render() . "</div>";
@@ -2131,6 +2240,27 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			}
 			$table->headerRow($headers);
 
+			// Calculate sums from ALL customers (not just paginated)
+			$sums = [];
+			$currency = 'EUR'; // Default currency
+			foreach ($customerData as $data) {
+				// Get currency from first purchase if available
+				if (!$currency || $currency === 'EUR') {
+					$firstPurchase = $data['user']->spl_purchases->first();
+					if ($firstPurchase) {
+						$currency = strtoupper(((array)$firstPurchase->meta('stripe_session'))['currency'] ?? 'EUR');
+					}
+				}
+
+				// Track summable columns
+				if (isset($data['total_revenue'])) {
+					$sums['total_revenue'] = ($sums['total_revenue'] ?? 0) + $data['total_revenue'];
+				}
+				if (isset($data['total_purchases'])) {
+					$sums['total_purchases'] = ($sums['total_purchases'] ?? 0) + $data['total_purchases'];
+				}
+			}
+
 			// Dynamic rows
 			foreach ($paginatedData as $data) {
 				$row = [];
@@ -2165,6 +2295,28 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 					}
 				}
 				$table->row($row);
+			}
+
+			// Add summary row if we have summable data
+			if (!empty($sums)) {
+				$summaryRow = [];
+				$firstCol = true;
+				foreach ($columns as $col) {
+					if ($firstCol) {
+						$summaryRow[] = '<strong>' . $this->_('Total') . '</strong>';
+						$firstCol = false;
+					} elseif (isset($sums[$col])) {
+						$value = $sums[$col];
+						if ($this->getColumnSummaryType($col) === 'money') {
+							$summaryRow[] = '<strong>' . $this->formatPrice($value, $currency) . '</strong>';
+						} else {
+							$summaryRow[] = '<strong>' . number_format($value, 0, ',', '.') . '</strong>';
+						}
+					} else {
+						$summaryRow[] = '';
+					}
+				}
+				$table->row($summaryRow);
 			}
 
 			$out .= "<div style='margin-top:-1px'>" . $table->render() . "</div>";
