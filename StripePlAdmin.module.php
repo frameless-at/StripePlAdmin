@@ -62,13 +62,16 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	];
 
 	/**
-	 * Default columns to show
+	 * Default columns and filters to show
 	 */
 	public static function getDefaults(): array {
 		return [
 			'purchasesColumns' => ['user_email', 'purchase_date', 'product_titles', 'amount_total', 'payment_status'],
 			'productsColumns' => ['name', 'purchases', 'quantity', 'revenue', 'last_purchase'],
 			'customersColumns' => ['name', 'email', 'total_purchases', 'total_revenue', 'first_purchase', 'last_activity'],
+			'purchasesFilters' => ['user_email', 'user_name', 'purchase_date', 'product_titles', 'amount_total'],
+			'productsFilters' => ['name', 'revenue', 'purchases', 'quantity', 'last_purchase'],
+			'customersFilters' => ['name', 'email', 'total_revenue', 'total_purchases', 'first_purchase'],
 			'itemsPerPage' => 25,
 		];
 	}
@@ -158,6 +161,50 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	}
 
 	/**
+	 * Get all available filters for Purchases tab
+	 */
+	protected function getAvailablePurchasesFilters(): array {
+		return [
+			'user_email' => $this->_('User Email'),
+			'user_name' => $this->_('User Name'),
+			'customer_name' => $this->_('Customer Name'),
+			'purchase_date' => $this->_('Purchase Date'),
+			'product_titles' => $this->_('Products'),
+			'amount_total' => $this->_('Amount Total'),
+			'payment_status' => $this->_('Payment Status'),
+			'period_end' => $this->_('Period End'),
+			'last_renewal' => $this->_('Last Renewal'),
+		];
+	}
+
+	/**
+	 * Get all available filters for Products tab
+	 */
+	protected function getAvailableProductsFilters(): array {
+		return [
+			'name' => $this->_('Product Name'),
+			'revenue' => $this->_('Revenue'),
+			'purchases' => $this->_('Purchases'),
+			'quantity' => $this->_('Quantity'),
+			'renewals' => $this->_('Renewals'),
+			'last_purchase' => $this->_('Last Purchase'),
+		];
+	}
+
+	/**
+	 * Get all available filters for Customers tab
+	 */
+	protected function getAvailableCustomersFilters(): array {
+		return [
+			'name' => $this->_('Name'),
+			'email' => $this->_('Email'),
+			'total_revenue' => $this->_('Total Revenue'),
+			'total_purchases' => $this->_('Total Purchases'),
+			'first_purchase' => $this->_('First Purchase'),
+		];
+	}
+
+	/**
 	 * Module configuration
 	 */
 	public static function getModuleConfigInputfields(array $data): InputfieldWrapper {
@@ -188,6 +235,18 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$f->value = $data['purchasesColumns'] ?? $data['adminColumns'] ?? [];
 		$tab1->add($f);
 
+		// Filters for Purchases tab
+		$f = $modules->get('InputfieldAsmSelect');
+		$f->name = 'purchasesFilters';
+		$f->label = $instance->_('Filters for Purchases tab');
+		$f->description = $instance->_('Select which filters should be available. Only filters matching selected columns will be shown.');
+
+		foreach ($instance->getAvailablePurchasesFilters() as $key => $label) {
+			$f->addOption($key, $label);
+		}
+		$f->value = $data['purchasesFilters'] ?? [];
+		$tab1->add($f);
+
 		$wrapper->add($tab1);
 
 		// Products Tab
@@ -206,6 +265,18 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$f->value = $data['productsColumns'] ?? [];
 		$tab2->add($f);
 
+		// Filters for Products tab
+		$f = $modules->get('InputfieldAsmSelect');
+		$f->name = 'productsFilters';
+		$f->label = $instance->_('Filters for Products tab');
+		$f->description = $instance->_('Select which filters should be available. Only filters matching selected columns will be shown.');
+
+		foreach ($instance->getAvailableProductsFilters() as $key => $label) {
+			$f->addOption($key, $label);
+		}
+		$f->value = $data['productsFilters'] ?? [];
+		$tab2->add($f);
+
 		$wrapper->add($tab2);
 
 		// Customers Tab
@@ -222,6 +293,18 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			$f->addOption($key, $customerLabels[$key] ?? $col['label']);
 		}
 		$f->value = $data['customersColumns'] ?? [];
+		$tab3->add($f);
+
+		// Filters for Customers tab
+		$f = $modules->get('InputfieldAsmSelect');
+		$f->name = 'customersFilters';
+		$f->label = $instance->_('Filters for Customers tab');
+		$f->description = $instance->_('Select which filters should be available. Only filters matching selected columns will be shown.');
+
+		foreach ($instance->getAvailableCustomersFilters() as $key => $label) {
+			$f->addOption($key, $label);
+		}
+		$f->value = $data['customersFilters'] ?? [];
 		$tab3->add($f);
 
 		$wrapper->add($tab3);
@@ -840,6 +923,16 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$modules = $this->wire('modules');
 		$input = $this->wire('input');
 
+		// Get configured filters for this context
+		$configuredFilters = [];
+		if ($context === 'purchases') {
+			$configuredFilters = $this->purchasesFilters ?: self::getDefaults()['purchasesFilters'];
+		} elseif ($context === 'products') {
+			$configuredFilters = $this->productsFilters ?: self::getDefaults()['productsFilters'];
+		} elseif ($context === 'customers') {
+			$configuredFilters = $this->customersFilters ?: self::getDefaults()['customersFilters'];
+		}
+
 		// Build form
 		/** @var InputfieldForm $form */
 		$form = $modules->get('InputfieldForm');
@@ -851,6 +944,11 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$addedFilters = []; // Track which filters we've already added
 
 		foreach ($columns as $column) {
+			// Check if filter is enabled in config
+			if (!in_array($column, $configuredFilters, true)) {
+				continue;
+			}
+
 			$config = $this->getFilterConfigForColumn($column, $context);
 			if (!$config) continue;
 
@@ -1071,7 +1169,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 				case 'number_range':
 					$min = $input->get('filter_' . $label . '_min');
 					$max = $input->get('filter_' . $label . '_max');
-					if ($min !== '' || $max !== '') {
+					if (($min !== '' && $min !== null) || ($max !== '' && $max !== null)) {
 						$filters[$column] = ['type' => 'number_range', 'min' => $min, 'max' => $max];
 					}
 					break;
@@ -1594,7 +1692,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 				case 'number_range':
 					$min = $input->get('filter_' . $label . '_min');
 					$max = $input->get('filter_' . $label . '_max');
-					if ($min !== '' || $max !== '') {
+					if (($min !== '' && $min !== null) || ($max !== '' && $max !== null)) {
 						$filters[$column] = ['type' => 'number_range', 'min' => $min, 'max' => $max];
 					}
 					break;
@@ -1941,7 +2039,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 				case 'number_range':
 					$min = $input->get('filter_' . $label . '_min');
 					$max = $input->get('filter_' . $label . '_max');
-					if ($min !== '' || $max !== '') {
+					if (($min !== '' && $min !== null) || ($max !== '' && $max !== null)) {
 						$filters[$column] = ['type' => 'number_range', 'min' => $min, 'max' => $max];
 					}
 					break;
