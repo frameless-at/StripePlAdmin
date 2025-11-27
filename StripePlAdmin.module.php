@@ -945,17 +945,21 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$filterConfigs = [];
 		$addedFilters = []; // Track which filters we've already added
 
-		foreach ($columns as $column) {
-			// Check if filter is enabled in config
-			if (!in_array($column, $configuredFilters, true)) {
+		// Process configured filters
+		foreach ($configuredFilters as $filterName) {
+			// Check if this filter has a matching column OR is a column-independent filter
+			$hasMatchingColumn = in_array($filterName, $columns, true);
+			$isIndependentFilter = in_array($filterName, ['purchase_period'], true); // Filters that don't require a column
+
+			if (!$hasMatchingColumn && !$isIndependentFilter) {
 				continue;
 			}
 
-			$config = $this->getFilterConfigForColumn($column, $context);
+			$config = $this->getFilterConfigForColumn($filterName, $context);
 			if (!$config) continue;
 
 			// Create unique key for this filter type
-			$filterKey = $config['type'] . '_' . ($config['fields'][0] ?? $column);
+			$filterKey = $config['type'] . '_' . ($config['fields'][0] ?? $filterName);
 
 			// Skip if we already added this filter
 			if (isset($addedFilters[$filterKey])) {
