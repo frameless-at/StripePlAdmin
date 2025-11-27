@@ -754,6 +754,14 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	}
 
 	/**
+	 * Check if column contains money values (needs Euro to Cent conversion)
+	 */
+	protected function isMoneyColumn(string $column): bool {
+		$moneyColumns = ['amount_total', 'revenue', 'total_revenue'];
+		return in_array($column, $moneyColumns, true);
+	}
+
+	/**
 	 * Compute shipping address
 	 */
 	protected function computeShippingAddress(User $user, Page $item): string {
@@ -1238,6 +1246,11 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 					$min = $input->get('filter_' . $label . '_min');
 					$max = $input->get('filter_' . $label . '_max');
 					if (($min !== '' && $min !== null) || ($max !== '' && $max !== null)) {
+						// Convert Euro to Cent for money columns
+						if ($this->isMoneyColumn($column)) {
+							if ($min !== '' && $min !== null) $min = (float)$min * 100;
+							if ($max !== '' && $max !== null) $max = (float)$max * 100;
+						}
 						$filters[$column] = ['type' => 'number_range', 'min' => $min, 'max' => $max];
 					}
 					break;
@@ -1775,6 +1788,11 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 					$min = $input->get('filter_' . $label . '_min');
 					$max = $input->get('filter_' . $label . '_max');
 					if (($min !== '' && $min !== null) || ($max !== '' && $max !== null)) {
+						// Convert Euro to Cent for money columns
+						if ($this->isMoneyColumn($column)) {
+							if ($min !== '' && $min !== null) $min = (float)$min * 100;
+							if ($max !== '' && $max !== null) $max = (float)$max * 100;
+						}
 						$filters[$column] = ['type' => 'number_range', 'min' => $min, 'max' => $max];
 					}
 					break;
@@ -2182,6 +2200,11 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 					$min = $input->get('filter_' . $label . '_min');
 					$max = $input->get('filter_' . $label . '_max');
 					if (($min !== '' && $min !== null) || ($max !== '' && $max !== null)) {
+						// Convert Euro to Cent for money columns
+						if ($this->isMoneyColumn($column)) {
+							if ($min !== '' && $min !== null) $min = (float)$min * 100;
+							if ($max !== '' && $max !== null) $max = (float)$max * 100;
+						}
 						$filters[$column] = ['type' => 'number_range', 'min' => $min, 'max' => $max];
 					}
 					break;
