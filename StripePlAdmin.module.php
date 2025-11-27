@@ -1056,7 +1056,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			$f = $modules->get('InputfieldText');
 			$f->name = 'filter_search';
 			$f->label = $this->_('Search');
-			$f->columnWidth = 30;
+			$f->columnWidth = 25;
 			$f->value = $input->get('filter_search');
 			$f->collapsed = Inputfield::collapsedNever;
 			$form->add($f);
@@ -1072,7 +1072,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 					$f->name = 'filter_' . strtolower(str_replace(' ', '_', $config['label'])) . '_from';
 					$f->label = $config['label'] . ' ' . $this->_('From');
 					$f->attr('type', 'date');
-					$f->columnWidth = 20;
+					$f->columnWidth = 15;
 					$f->value = $input->get($f->name);
 					$form->add($f);
 
@@ -1082,7 +1082,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 					$f->name = 'filter_' . strtolower(str_replace(' ', '_', $config['label'])) . '_to';
 					$f->label = $config['label'] . ' ' . $this->_('To');
 					$f->attr('type', 'date');
-					$f->columnWidth = 20;
+					$f->columnWidth = 15;
 					$f->value = $input->get($f->name);
 					$form->add($f);
 					break;
@@ -1114,7 +1114,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 					$f = $modules->get('InputfieldAsmSelect');
 					$f->name = 'filter_products';
 					$f->label = $config['label'];
-					$f->columnWidth = 30;
+					$f->columnWidth = 25;
 
 					// Get product options
 					$productOptions = $this->getProductFilterOptions();
