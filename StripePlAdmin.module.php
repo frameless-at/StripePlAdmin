@@ -35,7 +35,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		'purchase_lines'    => ['label' => 'Purchase Lines', 'type' => 'field'],
 
 		// Stripe session meta
-		'session_id'        => ['label' => 'Session ID', 'path' => ['stripe_session', 'id']],
+		'session_id'        => ['label' => 'Session ID', 'type' => 'computed', 'compute' => 'computeSessionId'],
 		'customer_id'       => ['label' => 'Customer ID', 'path' => ['stripe_session', 'customer', 'id']],
 		'customer_name'     => ['label' => 'Customer Name', 'type' => 'computed', 'compute' => 'computeCustomerName'],
 		'payment_status'    => ['label' => 'Payment Status', 'path' => ['stripe_session', 'payment_status']],
@@ -388,6 +388,9 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 		// Pagination and Export in same row
 		$out .= $this->renderPaginationRow($total, $perPage, $page);
+
+		// Add modal for purchase details
+		$out .= $this->renderPurchaseDetailsModal();
 
 		return $out;
 	}
@@ -787,6 +790,20 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	protected function computeCustomerName(User $user, Page $item): string {
 		$customerName = $user->title ?: $user->name;
 		return $this->renderCustomerName($customerName, $user->id);
+	}
+
+	/**
+	 * Compute session ID as clickable link to show purchase details
+	 */
+	protected function computeSessionId(User $user, Page $item): string {
+		$session = (array)$item->meta('stripe_session');
+		$sessionId = $session['id'] ?? '';
+
+		if (empty($sessionId)) {
+			return '';
+		}
+
+		return "<a href='#' class='show-purchase-details' data-session-id='" . htmlspecialchars($sessionId, ENT_QUOTES) . "'>" . htmlspecialchars($sessionId) . "</a>";
 	}
 
 	/**
@@ -2467,6 +2484,211 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	}
 
 	/**
+	 * AJAX endpoint: Render purchase details for a specific session
+	 */
+	public function ___executePurchaseDetails(): void {
+		$input = $this->wire('input');
+		$users = $this->wire('users');
+
+		$sessionId = $input->get->text('session_id');
+		if (!$sessionId) {
+			echo '<p style="color:red;">' . $this->_('No session ID provided') . '</p>';
+			exit;
+		}
+
+		// Find the purchase with this session ID
+		$foundPurchase = null;
+		$foundUser = null;
+
+		foreach ($users->find("spl_purchases.count>0") as $user) {
+			foreach ($user->spl_purchases as $item) {
+				$session = (array)$item->meta('stripe_session');
+				if (($session['id'] ?? '') === $sessionId) {
+					$foundPurchase = $item;
+					$foundUser = $user;
+					break 2;
+				}
+			}
+		}
+
+		if (!$foundPurchase || !$foundUser) {
+			echo '<p style="color:red;">' . $this->_('Purchase not found') . '</p>';
+			exit;
+		}
+
+		// Render purchase details
+		$session = (array)$foundPurchase->meta('stripe_session');
+		$lineItems = $session['line_items']['data'] ?? [];
+		$currency = strtoupper($session['currency'] ?? 'EUR');
+
+		echo '<h3 class="uk-modal-title">' . $this->_('Purchase Details') . '</h3>';
+
+		// Basic information
+		echo '<div class="uk-grid uk-grid-small" uk-grid>';
+		echo '<div class="uk-width-1-2"><strong>' . $this->_('Session ID') . ':</strong></div>';
+		echo '<div class="uk-width-1-2">' . htmlspecialchars($sessionId) . '</div>';
+
+		echo '<div class="uk-width-1-2"><strong>' . $this->_('Customer Email') . ':</strong></div>';
+		echo '<div class="uk-width-1-2">' . htmlspecialchars($foundUser->email) . '</div>';
+
+		echo '<div class="uk-width-1-2"><strong>' . $this->_('Customer Name') . ':</strong></div>';
+		$customerName = $foundUser->title ?: $foundUser->name;
+		echo '<div class="uk-width-1-2">' . htmlspecialchars($customerName) . '</div>';
+
+		$purchaseDate = (int)$foundPurchase->get('purchase_date');
+		echo '<div class="uk-width-1-2"><strong>' . $this->_('Purchase Date') . ':</strong></div>';
+		echo '<div class="uk-width-1-2">' . date('Y-m-d H:i', $purchaseDate) . '</div>';
+
+		echo '<div class="uk-width-1-2"><strong>' . $this->_('Payment Status') . ':</strong></div>';
+		$paymentStatus = $session['payment_status'] ?? '-';
+		echo '<div class="uk-width-1-2">' . htmlspecialchars($paymentStatus) . '</div>';
+
+		// Customer ID from Stripe
+		$stripeCustomerId = '';
+		if (isset($session['customer'])) {
+			if (is_array($session['customer'])) {
+				$stripeCustomerId = $session['customer']['id'] ?? '';
+			} else {
+				$stripeCustomerId = $session['customer'];
+			}
+		}
+		if ($stripeCustomerId) {
+			echo '<div class="uk-width-1-2"><strong>' . $this->_('Stripe Customer ID') . ':</strong></div>';
+			echo '<div class="uk-width-1-2">' . htmlspecialchars($stripeCustomerId) . '</div>';
+		}
+
+		echo '</div>';
+
+		// Line Items
+		if (!empty($lineItems)) {
+			echo '<h4 class="uk-margin-top">' . $this->_('Products') . '</h4>';
+			echo '<table class="uk-table uk-table-small uk-table-divider">';
+			echo '<thead><tr>';
+			echo '<th>' . $this->_('Product') . '</th>';
+			echo '<th>' . $this->_('Quantity') . '</th>';
+			echo '<th>' . $this->_('Price') . '</th>';
+			echo '<th>' . $this->_('Total') . '</th>';
+			echo '</tr></thead><tbody>';
+
+			$grandTotal = 0;
+			foreach ($lineItems as $li) {
+				$productName = $li['description'] ?? $li['price']['nickname'] ?? 'Unknown';
+				if (isset($li['price']['product']['name'])) {
+					$productName = $li['price']['product']['name'];
+				}
+
+				$quantity = (int)($li['quantity'] ?? 1);
+				$unitAmount = (int)($li['price']['unit_amount'] ?? 0);
+				$amountTotal = (int)($li['amount_total'] ?? 0);
+				$grandTotal += $amountTotal;
+
+				echo '<tr>';
+				echo '<td>' . htmlspecialchars($productName) . '</td>';
+				echo '<td>' . $quantity . '</td>';
+				echo '<td>' . $this->formatPrice($unitAmount, $currency) . '</td>';
+				echo '<td>' . $this->formatPrice($amountTotal, $currency) . '</td>';
+				echo '</tr>';
+			}
+
+			// Add renewals to grand total
+			$renewals = (array)$foundPurchase->meta('renewals');
+			$renewalTotal = 0;
+			foreach ($renewals as $scopeRenewals) {
+				foreach ((array)$scopeRenewals as $renewal) {
+					$renewalTotal += (int)($renewal['amount'] ?? 0);
+				}
+			}
+			$grandTotal += $renewalTotal;
+
+			// Total row
+			echo '<tr class="uk-text-bold">';
+			echo '<td colspan="3">' . $this->_('Total') . '</td>';
+			echo '<td>' . $this->formatPrice($grandTotal, $currency) . '</td>';
+			echo '</tr>';
+
+			echo '</tbody></table>';
+		}
+
+		// Subscription information
+		$subscriptionId = $session['subscription'] ?? '';
+		if ($subscriptionId) {
+			echo '<h4 class="uk-margin-top">' . $this->_('Subscription Information') . '</h4>';
+			echo '<div class="uk-grid uk-grid-small" uk-grid>';
+			
+			echo '<div class="uk-width-1-2"><strong>' . $this->_('Subscription ID') . ':</strong></div>';
+			echo '<div class="uk-width-1-2">' . htmlspecialchars($subscriptionId) . '</div>';
+
+			// Get period end information
+			$periodEndMap = (array)$foundPurchase->meta('period_end_map');
+			if (!empty($periodEndMap)) {
+				foreach ($periodEndMap as $key => $value) {
+					if (strpos($key, '_canceled') === false && strpos($key, '_paused') === false) {
+						$periodEndTs = (int)$value;
+						$status = 'Active';
+						if (isset($periodEndMap[$key . '_canceled'])) {
+							$status = 'Canceled';
+						} elseif (isset($periodEndMap[$key . '_paused'])) {
+							$status = 'Paused';
+						} elseif ($periodEndTs < time()) {
+							$status = 'Expired';
+						}
+
+						echo '<div class="uk-width-1-2"><strong>' . $this->_('Subscription Status') . ':</strong></div>';
+						echo '<div class="uk-width-1-2">' . htmlspecialchars($status) . '</div>';
+
+						echo '<div class="uk-width-1-2"><strong>' . $this->_('Period End') . ':</strong></div>';
+						echo '<div class="uk-width-1-2">' . date('Y-m-d', $periodEndTs) . '</div>';
+						break;
+					}
+				}
+			}
+
+			// Renewal count
+			if ($renewalTotal > 0) {
+				$renewalCount = 0;
+				foreach ($renewals as $scopeRenewals) {
+					$renewalCount += count((array)$scopeRenewals);
+				}
+				echo '<div class="uk-width-1-2"><strong>' . $this->_('Renewals') . ':</strong></div>';
+				echo '<div class="uk-width-1-2">' . $renewalCount . ' (' . $this->formatPrice($renewalTotal, $currency) . ')</div>';
+			}
+
+			echo '</div>';
+		}
+
+		// Shipping information
+		$shippingName = $session['shipping']['name'] ?? '';
+		$shippingAddress = $session['shipping']['address'] ?? [];
+		if ($shippingName || !empty($shippingAddress)) {
+			echo '<h4 class="uk-margin-top">' . $this->_('Shipping Information') . '</h4>';
+			echo '<div class="uk-grid uk-grid-small" uk-grid>';
+
+			if ($shippingName) {
+				echo '<div class="uk-width-1-2"><strong>' . $this->_('Name') . ':</strong></div>';
+				echo '<div class="uk-width-1-2">' . htmlspecialchars($shippingName) . '</div>';
+			}
+
+			if (!empty($shippingAddress)) {
+				$addressParts = [];
+				if (!empty($shippingAddress['line1'])) $addressParts[] = $shippingAddress['line1'];
+				if (!empty($shippingAddress['line2'])) $addressParts[] = $shippingAddress['line2'];
+				if (!empty($shippingAddress['city'])) $addressParts[] = $shippingAddress['city'];
+				if (!empty($shippingAddress['postal_code'])) $addressParts[] = $shippingAddress['postal_code'];
+				if (!empty($shippingAddress['country'])) $addressParts[] = $shippingAddress['country'];
+
+				if (!empty($addressParts)) {
+					echo '<div class="uk-width-1-2"><strong>' . $this->_('Address') . ':</strong></div>';
+					echo '<div class="uk-width-1-2">' . htmlspecialchars(implode(', ', $addressParts)) . '</div>';
+				}
+			}
+
+			echo '</div>';
+		}
+
+		exit;
+	}
+
+	/**
 	 * AJAX endpoint to get customer purchases
 	 */
 	public function ___executeCustomerPurchases(): void {
@@ -2982,6 +3204,54 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 					})
 					.catch(function(error) {
 						document.getElementById('product-purchases-content').innerHTML = '<h3 class="uk-modal-title">{$error}</h3><p style="color:red;">{$errorLoading}</p>';
+					});
+			}
+		});
+		</script>
+		HTML;
+	}
+
+	/**
+	 * Render modal for purchase details
+	 */
+	protected function renderPurchaseDetailsModal(): string {
+		$baseUrl = $this->page->url;
+		$modalId = 'modal_purchase_' . uniqid();
+		$loading = $this->_('Loading...');
+		$loadingDetails = $this->_('Loading purchase details...');
+		$error = $this->_('Error');
+		$errorLoading = $this->_('Error loading purchase details');
+
+		return <<<HTML
+		<div id="{$modalId}" class="uk-modal-container" uk-modal>
+			<div class="uk-modal-dialog uk-modal-body">
+				<button class="uk-modal-close-default" type="button" uk-close></button>
+				<div id="purchase-details-content">
+					<h3 class="uk-modal-title">{$loading}</h3>
+					<p>{$loadingDetails}</p>
+				</div>
+			</div>
+		</div>
+		<script>
+		document.addEventListener('click', function(e) {
+			if (e.target.classList.contains('show-purchase-details')) {
+				e.preventDefault();
+				var sessionId = e.target.getAttribute('data-session-id');
+
+				// Show modal
+				UIkit.modal('#{$modalId}').show();
+
+				// Set loading state
+				document.getElementById('purchase-details-content').innerHTML = '<h3 class="uk-modal-title">{$loading}</h3><p>{$loadingDetails}</p>';
+
+				// Fetch purchase details via AJAX
+				fetch('{$baseUrl}purchaseDetails/?session_id=' + encodeURIComponent(sessionId))
+					.then(function(response) { return response.text(); })
+					.then(function(html) {
+						document.getElementById('purchase-details-content').innerHTML = html;
+					})
+					.catch(function(error) {
+						document.getElementById('purchase-details-content').innerHTML = '<h3 class="uk-modal-title">{$error}</h3><p style="color:red;">{$errorLoading}</p>';
 					});
 			}
 		});
