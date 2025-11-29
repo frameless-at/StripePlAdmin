@@ -2524,6 +2524,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$session = (array)$foundPurchase->meta('stripe_session');
 		$lineItems = $session['line_items']['data'] ?? [];
 		$currency = strtoupper($session['currency'] ?? 'EUR');
+		$renewals = (array)$foundPurchase->meta('renewals');
 
 		echo '<h3 class="uk-modal-title">' . $this->_('Purchase Details') . '</h3>';
 
@@ -2555,6 +2556,42 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 				echo '<td>' . $this->formatPrice($unitAmount, $currency) . '</td>';
 				echo '<td>' . $this->formatPrice($amountTotal, $currency) . '</td>';
 				echo '</tr>';
+
+				// Show renewals for this product (if it's a subscription)
+				$isSubscription = isset($li['price']['recurring']) && $li['price']['recurring'];
+				if ($isSubscription && !empty($renewals)) {
+					// Get the Stripe product ID for matching
+					$stripeProductId = '';
+					if (isset($li['price']['product']['id'])) {
+						$stripeProductId = $li['price']['product']['id'];
+					} elseif (is_string($li['price']['product'])) {
+						$stripeProductId = $li['price']['product'];
+					}
+
+					if ($stripeProductId) {
+						// Look for renewals matching this product
+						// Renewals can be stored with keys like "0#stripe_product_id" or as page IDs
+						$scopeKey = '0#' . $stripeProductId;
+
+						if (isset($renewals[$scopeKey])) {
+							foreach ((array)$renewals[$scopeKey] as $renewal) {
+								$renewalDate = (int)($renewal['date'] ?? 0);
+								$renewalAmount = (int)($renewal['amount'] ?? 0);
+								$grandTotal += $renewalAmount;
+
+								$renewalDateStr = $renewalDate ? date('d.m.Y', $renewalDate) : '-';
+
+								echo '<tr style="background-color: #f8f8f8;">';
+								echo '<td style="padding-left: 2em; font-style: italic;">' .
+									'Renewal am ' . htmlspecialchars($renewalDateStr) . '</td>';
+								echo '<td>1</td>';
+								echo '<td>' . $this->formatPrice($renewalAmount, $currency) . '</td>';
+								echo '<td>' . $this->formatPrice($renewalAmount, $currency) . '</td>';
+								echo '</tr>';
+							}
+						}
+					}
+				}
 			}
 
 
