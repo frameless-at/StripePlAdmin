@@ -2557,15 +2557,6 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 				echo '</tr>';
 			}
 
-			// Add renewals to grand total
-			$renewals = (array)$foundPurchase->meta('renewals');
-			$renewalTotal = 0;
-			foreach ($renewals as $scopeRenewals) {
-				foreach ((array)$scopeRenewals as $renewal) {
-					$renewalTotal += (int)($renewal['amount'] ?? 0);
-				}
-			}
-			$grandTotal += $renewalTotal;
 
 			// Total row
 			echo '<tr class="uk-text-bold">';
