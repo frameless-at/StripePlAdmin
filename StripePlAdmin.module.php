@@ -793,17 +793,13 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	}
 
 	/**
-	 * Compute session ID as clickable link to show purchase details
+	 * Compute session ID
 	 */
 	protected function computeSessionId(User $user, Page $item): string {
 		$session = (array)$item->meta('stripe_session');
 		$sessionId = $session['id'] ?? '';
 
-		if (empty($sessionId)) {
-			return '';
-		}
-
-		return "<a href='#' class='show-purchase-details' data-session-id='" . htmlspecialchars($sessionId, ENT_QUOTES) . "'>" . htmlspecialchars($sessionId) . "</a>";
+		return $sessionId;
 	}
 
 	/**
@@ -814,6 +810,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$productIds = (array)$item->meta('product_ids');
 		$session = (array)$item->meta('stripe_session');
 		$lineItems = $session['line_items']['data'] ?? [];
+		$sessionId = $session['id'] ?? '';
 
 		$titles = [];
 		$mappedStripeIds = [];
@@ -851,7 +848,14 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			}
 		}
 
-		return implode(', ', $titles);
+		$titleText = implode(', ', $titles);
+
+		// Make the product titles clickable to show purchase details
+		if (!empty($sessionId) && !empty($titleText)) {
+			return "<a href='#' class='show-purchase-details' data-session-id='" . htmlspecialchars($sessionId, ENT_QUOTES) . "'>" . htmlspecialchars($titleText) . "</a>";
+		}
+
+		return $titleText;
 	}
 
 	/**
@@ -2523,45 +2527,8 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 		echo '<h3 class="uk-modal-title">' . $this->_('Purchase Details') . '</h3>';
 
-		// Basic information
-		echo '<div class="uk-grid uk-grid-small" uk-grid>';
-		echo '<div class="uk-width-1-2"><strong>' . $this->_('Session ID') . ':</strong></div>';
-		echo '<div class="uk-width-1-2">' . htmlspecialchars($sessionId) . '</div>';
-
-		echo '<div class="uk-width-1-2"><strong>' . $this->_('Customer Email') . ':</strong></div>';
-		echo '<div class="uk-width-1-2">' . htmlspecialchars($foundUser->email) . '</div>';
-
-		echo '<div class="uk-width-1-2"><strong>' . $this->_('Customer Name') . ':</strong></div>';
-		$customerName = $foundUser->title ?: $foundUser->name;
-		echo '<div class="uk-width-1-2">' . htmlspecialchars($customerName) . '</div>';
-
-		$purchaseDate = (int)$foundPurchase->get('purchase_date');
-		echo '<div class="uk-width-1-2"><strong>' . $this->_('Purchase Date') . ':</strong></div>';
-		echo '<div class="uk-width-1-2">' . date('Y-m-d H:i', $purchaseDate) . '</div>';
-
-		echo '<div class="uk-width-1-2"><strong>' . $this->_('Payment Status') . ':</strong></div>';
-		$paymentStatus = $session['payment_status'] ?? '-';
-		echo '<div class="uk-width-1-2">' . htmlspecialchars($paymentStatus) . '</div>';
-
-		// Customer ID from Stripe
-		$stripeCustomerId = '';
-		if (isset($session['customer'])) {
-			if (is_array($session['customer'])) {
-				$stripeCustomerId = $session['customer']['id'] ?? '';
-			} else {
-				$stripeCustomerId = $session['customer'];
-			}
-		}
-		if ($stripeCustomerId) {
-			echo '<div class="uk-width-1-2"><strong>' . $this->_('Stripe Customer ID') . ':</strong></div>';
-			echo '<div class="uk-width-1-2">' . htmlspecialchars($stripeCustomerId) . '</div>';
-		}
-
-		echo '</div>';
-
 		// Line Items
 		if (!empty($lineItems)) {
-			echo '<h4 class="uk-margin-top">' . $this->_('Products') . '</h4>';
 			echo '<table class="uk-table uk-table-small uk-table-divider">';
 			echo '<thead><tr>';
 			echo '<th>' . $this->_('Product') . '</th>';
@@ -2607,82 +2574,6 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			echo '</tr>';
 
 			echo '</tbody></table>';
-		}
-
-		// Subscription information
-		$subscriptionId = $session['subscription'] ?? '';
-		if ($subscriptionId) {
-			echo '<h4 class="uk-margin-top">' . $this->_('Subscription Information') . '</h4>';
-			echo '<div class="uk-grid uk-grid-small" uk-grid>';
-			
-			echo '<div class="uk-width-1-2"><strong>' . $this->_('Subscription ID') . ':</strong></div>';
-			echo '<div class="uk-width-1-2">' . htmlspecialchars($subscriptionId) . '</div>';
-
-			// Get period end information
-			$periodEndMap = (array)$foundPurchase->meta('period_end_map');
-			if (!empty($periodEndMap)) {
-				foreach ($periodEndMap as $key => $value) {
-					if (strpos($key, '_canceled') === false && strpos($key, '_paused') === false) {
-						$periodEndTs = (int)$value;
-						$status = 'Active';
-						if (isset($periodEndMap[$key . '_canceled'])) {
-							$status = 'Canceled';
-						} elseif (isset($periodEndMap[$key . '_paused'])) {
-							$status = 'Paused';
-						} elseif ($periodEndTs < time()) {
-							$status = 'Expired';
-						}
-
-						echo '<div class="uk-width-1-2"><strong>' . $this->_('Subscription Status') . ':</strong></div>';
-						echo '<div class="uk-width-1-2">' . htmlspecialchars($status) . '</div>';
-
-						echo '<div class="uk-width-1-2"><strong>' . $this->_('Period End') . ':</strong></div>';
-						echo '<div class="uk-width-1-2">' . date('Y-m-d', $periodEndTs) . '</div>';
-						break;
-					}
-				}
-			}
-
-			// Renewal count
-			if ($renewalTotal > 0) {
-				$renewalCount = 0;
-				foreach ($renewals as $scopeRenewals) {
-					$renewalCount += count((array)$scopeRenewals);
-				}
-				echo '<div class="uk-width-1-2"><strong>' . $this->_('Renewals') . ':</strong></div>';
-				echo '<div class="uk-width-1-2">' . $renewalCount . ' (' . $this->formatPrice($renewalTotal, $currency) . ')</div>';
-			}
-
-			echo '</div>';
-		}
-
-		// Shipping information
-		$shippingName = $session['shipping']['name'] ?? '';
-		$shippingAddress = $session['shipping']['address'] ?? [];
-		if ($shippingName || !empty($shippingAddress)) {
-			echo '<h4 class="uk-margin-top">' . $this->_('Shipping Information') . '</h4>';
-			echo '<div class="uk-grid uk-grid-small" uk-grid>';
-
-			if ($shippingName) {
-				echo '<div class="uk-width-1-2"><strong>' . $this->_('Name') . ':</strong></div>';
-				echo '<div class="uk-width-1-2">' . htmlspecialchars($shippingName) . '</div>';
-			}
-
-			if (!empty($shippingAddress)) {
-				$addressParts = [];
-				if (!empty($shippingAddress['line1'])) $addressParts[] = $shippingAddress['line1'];
-				if (!empty($shippingAddress['line2'])) $addressParts[] = $shippingAddress['line2'];
-				if (!empty($shippingAddress['city'])) $addressParts[] = $shippingAddress['city'];
-				if (!empty($shippingAddress['postal_code'])) $addressParts[] = $shippingAddress['postal_code'];
-				if (!empty($shippingAddress['country'])) $addressParts[] = $shippingAddress['country'];
-
-				if (!empty($addressParts)) {
-					echo '<div class="uk-width-1-2"><strong>' . $this->_('Address') . ':</strong></div>';
-					echo '<div class="uk-width-1-2">' . htmlspecialchars(implode(', ', $addressParts)) . '</div>';
-				}
-			}
-
-			echo '</div>';
 		}
 
 		exit;
