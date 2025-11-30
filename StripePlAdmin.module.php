@@ -35,10 +35,9 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		'purchase_lines'    => ['label' => 'Purchase Lines', 'type' => 'field'],
 
 		// Stripe session meta
-		'session_id'        => ['label' => 'Session ID', 'path' => ['stripe_session', 'id']],
+		'session_id'        => ['label' => 'Session ID', 'type' => 'computed', 'compute' => 'computeSessionId'],
 		'customer_id'       => ['label' => 'Customer ID', 'path' => ['stripe_session', 'customer', 'id']],
 		'customer_name'     => ['label' => 'Customer Name', 'type' => 'computed', 'compute' => 'computeCustomerName'],
-		'payment_status'    => ['label' => 'Payment Status', 'path' => ['stripe_session', 'payment_status']],
 		'currency'          => ['label' => 'Currency', 'path' => ['stripe_session', 'currency']],
 		'amount_total'      => ['label' => 'Amount Total', 'type' => 'computed', 'compute' => 'computeAmountTotal'],
 		'subscription_id'   => ['label' => 'Subscription ID', 'path' => ['stripe_session', 'subscription']],
@@ -66,7 +65,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	 */
 	public static function getDefaults(): array {
 		return [
-			'purchasesColumns' => ['user_email', 'purchase_date', 'product_titles', 'amount_total', 'payment_status'],
+			'purchasesColumns' => ['user_email', 'purchase_date', 'product_titles', 'amount_total'],
 			'productsColumns' => ['name', 'purchases', 'quantity', 'revenue', 'last_purchase'],
 			'customersColumns' => ['name', 'email', 'total_purchases', 'total_revenue', 'first_purchase', 'last_activity'],
 			'purchasesFilters' => ['user_email', 'user_name', 'purchase_date', 'product_titles', 'amount_total'],
@@ -88,7 +87,6 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			'session_id' => $this->_('Session ID'),
 			'customer_id' => $this->_('Customer ID'),
 			'customer_name' => $this->_('Customer Name'),
-			'payment_status' => $this->_('Payment Status'),
 			'currency' => $this->_('Currency'),
 			'amount_total' => $this->_('Amount Total'),
 			'subscription_id' => $this->_('Subscription ID'),
@@ -140,7 +138,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	protected array $availableCustomersColumns = [
 		'name'            => ['label' => 'Name'],
 		'email'           => ['label' => 'Email'],
-		'total_purchases' => ['label' => 'Total Purchases'],
+		'total_purchases' => ['label' => 'Purchases'],
 		'total_revenue'   => ['label' => 'Total Revenue'],
 		'first_purchase'  => ['label' => 'First Purchase'],
 		'last_activity'   => ['label' => 'Last Activity'],
@@ -153,7 +151,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		return [
 			'name' => $this->_('Name'),
 			'email' => $this->_('Email'),
-			'total_purchases' => $this->_('Total Purchases'),
+			'total_purchases' => $this->_('Purchases'),
 			'total_revenue' => $this->_('Total Revenue'),
 			'first_purchase' => $this->_('First Purchase'),
 			'last_activity' => $this->_('Last Activity'),
@@ -169,9 +167,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			'user_name' => $this->_('User Name'),
 			'customer_name' => $this->_('Customer Name'),
 			'purchase_date' => $this->_('Purchase Date'),
-			'product_titles' => $this->_('Products'),
 			'amount_total' => $this->_('Amount Total'),
-			'payment_status' => $this->_('Payment Status'),
 			'period_end' => $this->_('Period End'),
 			'last_renewal' => $this->_('Last Renewal'),
 		];
@@ -388,6 +384,12 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 		// Pagination and Export in same row
 		$out .= $this->renderPaginationRow($total, $perPage, $page);
+
+		// Add modal for purchase details
+		$out .= $this->renderPurchaseDetailsModal();
+
+		// Add tab info modal
+		$out .= $this->renderTabInfoModal('purchases');
 
 		return $out;
 	}
@@ -790,6 +792,16 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	}
 
 	/**
+	 * Compute session ID
+	 */
+	protected function computeSessionId(User $user, Page $item): string {
+		$session = (array)$item->meta('stripe_session');
+		$sessionId = $session['id'] ?? '';
+
+		return $sessionId;
+	}
+
+	/**
 	 * Compute product titles from IDs and stripe session line items
 	 */
 	protected function computeProductTitles(User $user, Page $item): string {
@@ -797,6 +809,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$productIds = (array)$item->meta('product_ids');
 		$session = (array)$item->meta('stripe_session');
 		$lineItems = $session['line_items']['data'] ?? [];
+		$sessionId = $session['id'] ?? '';
 
 		$titles = [];
 		$mappedStripeIds = [];
@@ -834,13 +847,41 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			}
 		}
 
-		return implode(', ', $titles);
+		$titleText = implode(', ', $titles);
+
+		// Make the product titles clickable to show purchase details
+		if (!empty($sessionId) && !empty($titleText)) {
+			return "<a href='#' class='show-purchase-details' data-session-id='" . htmlspecialchars($sessionId, ENT_QUOTES) . "'>" . htmlspecialchars($titleText) . "</a>";
+		}
+
+		return $titleText;
+	}
+
+	/**
+	 * Check if a purchase contains subscription products
+	 */
+	protected function hasSubscriptionProducts(Page $item): bool {
+		$session = (array)$item->meta('stripe_session');
+		$lineItems = $session['line_items']['data'] ?? [];
+
+		foreach ($lineItems as $li) {
+			if (isset($li['price']['recurring']) && $li['price']['recurring']) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**
 	 * Compute subscription status
 	 */
 	protected function computeSubscriptionStatus(User $user, Page $item): string {
+		// Only show status for purchases with subscription products
+		if (!$this->hasSubscriptionProducts($item)) {
+			return '–';
+		}
+
 		$map = (array)$item->meta('period_end_map');
 
 		if (empty($map)) {
@@ -887,6 +928,11 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	 * Compute period end dates
 	 */
 	protected function computePeriodEnd(User $user, Page $item): string {
+		// Only show period end for purchases with subscription products
+		if (!$this->hasSubscriptionProducts($item)) {
+			return '–';
+		}
+
 		$map = (array)$item->meta('period_end_map');
 
 		$dates = [];
@@ -960,7 +1006,6 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			'customer_name' => ['type' => 'search', 'label' => $this->_('Customer'), 'fields' => ['customer_name']],
 			'name' => ['type' => 'search', 'label' => $this->_('Name'), 'fields' => ['name']],
 			'email' => ['type' => 'search', 'label' => $this->_('Email'), 'fields' => ['email']],
-			'payment_status' => ['type' => 'search', 'label' => $this->_('Status'), 'fields' => ['payment_status']],
 
 			// Date filters
 			'purchase_date' => ['type' => 'date_range', 'label' => $this->_('Purchase Date')],
@@ -1281,6 +1326,122 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	}
 
 	/**
+	 * Parse search query with AND/OR operators
+	 *
+	 * Supports:
+	 * - AND/OR operators (e.g., "scale AND it AND up")
+	 * - + as AND operator (e.g., "scale+it+up" or "scale + it + up")
+	 * - Quoted phrases (e.g., "scale it up" to search for the exact phrase)
+	 * - Spaces treated as OR when no explicit operators are used
+	 *
+	 * Returns array with 'terms' and 'operators'
+	 */
+	protected function parseSearchQuery(string $search): array {
+		$originalSearch = trim($search);
+		if (empty($originalSearch)) {
+			return ['terms' => [], 'operators' => []];
+		}
+
+		$search = $originalSearch;
+
+		// Extract quoted phrases first and replace with placeholders
+		$quotedPhrases = [];
+		$placeholder = '___QUOTED_PHRASE___';
+
+		// Match both single and double quotes
+		if (preg_match_all('/"([^"]+)"|\'([^\']+)\'/', $search, $matches)) {
+			foreach ($matches[0] as $i => $fullMatch) {
+				$phrase = $matches[1][$i] ?: $matches[2][$i];
+				$quotedPhrases[] = $phrase;
+				// Replace quoted phrase with placeholder
+				$search = str_replace($fullMatch, $placeholder . $i . $placeholder, $search);
+			}
+		}
+
+		// Replace + with AND (with or without spaces around +)
+		$search = preg_replace('/\s*\+\s*/', ' AND ', $search);
+
+		// Split by AND and OR operators (case-insensitive)
+		$pattern = '/\s+(AND|OR)\s+/i';
+		$parts = preg_split($pattern, $search, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY);
+
+		$terms = [];
+		$operators = [];
+
+		for ($i = 0; $i < count($parts); $i++) {
+			$part = trim($parts[$i]);
+			if (empty($part)) continue;
+
+			if (strtoupper($part) === 'AND' || strtoupper($part) === 'OR') {
+				$operators[] = strtoupper($part);
+			} else {
+				// Check if this part contains a quoted phrase placeholder
+				if (preg_match('/' . preg_quote($placeholder, '/') . '(\d+)' . preg_quote($placeholder, '/') . '/', $part, $match)) {
+					$index = (int)$match[1];
+					$terms[] = strtolower($quotedPhrases[$index]);
+				} else {
+					$terms[] = strtolower($part);
+				}
+			}
+		}
+
+		// If no operators found, treat spaces as OR (unless we only have quoted phrases)
+		if (empty($operators) && strpos($originalSearch, ' ') !== false && empty($quotedPhrases)) {
+			// Re-parse from original search
+			$terms = array_map('trim', array_map('strtolower', explode(' ', $originalSearch)));
+			$terms = array_filter($terms); // Remove empty strings
+			$operators = array_fill(0, count($terms) - 1, 'OR');
+		}
+
+		return ['terms' => $terms, 'operators' => $operators];
+	}
+
+	/**
+	 * Check if text matches search query with AND/OR logic
+	 */
+	protected function matchesSearchQuery(string $text, array $searchTerms): bool {
+		if (empty($searchTerms)) return true;
+
+		$terms = $searchTerms['terms'];
+		$operators = $searchTerms['operators'];
+		$textLower = strtolower($text);
+
+		// Single term
+		if (count($terms) === 1) {
+			return strpos($textLower, $terms[0]) !== false;
+		}
+
+		// Multiple terms with operators
+		$results = [];
+		foreach ($terms as $term) {
+			$results[] = strpos($textLower, $term) !== false;
+		}
+
+		// Evaluate with operators
+		$finalResult = $results[0];
+		for ($i = 0; $i < count($operators); $i++) {
+			if ($operators[$i] === 'AND') {
+				$finalResult = $finalResult && $results[$i + 1];
+			} else { // OR
+				$finalResult = $finalResult || $results[$i + 1];
+			}
+		}
+
+		return $finalResult;
+	}
+
+	/**
+	 * Check if multiple text fields match search query
+	 */
+	protected function matchesSearchQueryMultiple(array $texts, array $searchTerms): bool {
+		if (empty($searchTerms)) return true;
+
+		// Combine all texts into one for matching
+		$combinedText = implode(' ', $texts);
+		return $this->matchesSearchQuery($combinedText, $searchTerms);
+	}
+
+	/**
 	 * Apply filters to purchases data
 	 */
 	protected function applyPurchasesFilters(array $purchases, string $search, array $filters): array {
@@ -1290,13 +1451,27 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			$user = $purchase['user'];
 			$item = $purchase['item'];
 
-			// Search filter
+			// Search filter with AND/OR support
 			if ($search) {
-				$searchLower = strtolower($search);
-				$userEmail = strtolower($user->email);
-				$userName = strtolower($user->title ?: $user->name);
+				$searchTerms = $this->parseSearchQuery($search);
+				$userEmail = $user->email;
+				$userName = $user->title ?: $user->name;
 
-				$matchFound = (strpos($userEmail, $searchLower) !== false) || (strpos($userName, $searchLower) !== false);
+				// Collect product names from line items
+				$productNames = [];
+				$session = (array)$item->meta('stripe_session');
+				$lineItems = $session['line_items']['data'] ?? [];
+				foreach ($lineItems as $li) {
+					$productName = $li['price']['product']['name']
+						?? $li['description']
+						?? $li['price']['nickname']
+						?? '';
+					if ($productName) {
+						$productNames[] = $productName;
+					}
+				}
+
+				$matchFound = $this->matchesSearchQueryMultiple(array_merge([$userEmail, $userName], $productNames), $searchTerms);
 				if (!$matchFound) continue;
 			}
 
@@ -1379,39 +1554,6 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 							}
 						}
 						break;
-
-					case 'product_multiselect':
-						$found = false;
-						$productIds = (array)$item->meta('product_ids');
-						$session = (array)$item->meta('stripe_session');
-						$lineItems = $session['line_items']['data'] ?? [];
-
-						foreach ($filter['values'] as $filterProduct) {
-							if (is_numeric($filterProduct)) {
-								if (in_array((int)$filterProduct, array_map('intval', $productIds))) {
-									$found = true;
-									break;
-								}
-							} elseif (strpos($filterProduct, 'stripe:') === 0) {
-								$searchName = substr($filterProduct, 7);
-								foreach ($lineItems as $li) {
-									$productName = $li['price']['product']['name']
-										?? $li['description']
-										?? $li['price']['nickname']
-										?? '';
-									if ($productName === $searchName) {
-										$found = true;
-										break 2;
-									}
-								}
-							}
-						}
-
-						if (!$found) {
-							$skip = true;
-							break 2;
-						}
-						break;
 				}
 			}
 
@@ -1430,12 +1572,13 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$filtered = [];
 
 		foreach ($products as $key => $product) {
-			// Search filter
+			// Search filter with AND/OR support
 			if ($search) {
-				$searchLower = strtolower($search);
-				$productName = strtolower($product['name']);
+				$searchTerms = $this->parseSearchQuery($search);
+				$productName = $product['name'];
 
-				if (strpos($productName, $searchLower) === false) continue;
+				$matchFound = $this->matchesSearchQuery($productName, $searchTerms);
+				if (!$matchFound) continue;
 			}
 
 			// Apply column-specific filters
@@ -1502,13 +1645,13 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$filtered = [];
 
 		foreach ($customers as $customer) {
-			// Search filter
+			// Search filter with AND/OR support
 			if ($search) {
-				$searchLower = strtolower($search);
-				$customerName = strtolower($customer['name']);
-				$customerEmail = strtolower($customer['email']);
+				$searchTerms = $this->parseSearchQuery($search);
+				$customerName = $customer['name'];
+				$customerEmail = $customer['email'];
 
-				$matchFound = (strpos($customerName, $searchLower) !== false) || (strpos($customerEmail, $searchLower) !== false);
+				$matchFound = $this->matchesSearchQueryMultiple([$customerName, $customerEmail], $searchTerms);
 				if (!$matchFound) continue;
 			}
 
@@ -1674,7 +1817,10 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		}
 		$out .= "</ul>";
 
+		$out .= "<div style='display:flex;gap:15px'>";
+		$out .= "<a href='#' class='ui-link show-tab-info' data-tab='{$active}'><i class='fa fa-info-circle'></i> Info</a>";
 		$out .= "<a href='{$configUrl}&collapse_info=1' class='ui-link'><i class='fa fa-cog'></i> Columns</a>";
+		$out .= "</div>";
 
 		$out .= "</div>";
 
@@ -1925,8 +2071,13 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 							break;
 						case 'purchases':
 							$count = $data['count'];
+							$renewals = $data['renewals'] ?? 0;
 							$productKey = htmlspecialchars($key);
-							$row[] = "<a href='#' class='show-product-purchases' data-product-key='{$productKey}'>{$count}</a>";
+							$display = $count;
+							if ($renewals > 0) {
+								$display .= " <small>(+{$renewals})</small>";
+							}
+							$row[] = "<a href='#' class='show-product-purchases' data-product-key='{$productKey}'>{$display}</a>";
 							break;
 						case 'quantity':
 							$row[] = $data['quantity'];
@@ -1985,6 +2136,9 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 		// Add modal placeholder
 		$out .= $this->renderProductPurchasesModal();
+
+		// Add tab info modal
+		$out .= $this->renderTabInfoModal('products');
 
 		return $out;
 	}
@@ -2171,6 +2325,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			$totalRevenue = 0;
 			$totalPurchases = 0;
 			$firstPurchase = PHP_INT_MAX;
+			$totalRenewals = 0;
 			$lastPurchase = 0;
 
 			foreach ($user->spl_purchases as $item) {
@@ -2191,6 +2346,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 				$renewals = (array)$item->meta('renewals');
 				foreach ($renewals as $scopeRenewals) {
 					foreach ((array)$scopeRenewals as $renewal) {
+						$totalRenewals++;
 						$totalRevenue += (int)($renewal['amount'] ?? 0);
 					}
 				}
@@ -2203,6 +2359,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 				'name' => $user->title ?: $user->name,
 				'email' => $user->email,
 				'total_purchases' => $totalPurchases,
+				'total_renewals' => $totalRenewals,
 				'total_revenue' => $totalRevenue,
 				'first_purchase' => $firstPurchase,
 				'last_purchase' => $lastPurchase,
@@ -2334,8 +2491,14 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 							$row[] = $this->renderUserEmail($data['email']);
 							break;
 						case 'total_purchases':
+							$purchases = $data['total_purchases'];
+							$renewals = $data['total_renewals'] ?? 0;
+							$display = $purchases;
+							if ($renewals > 0) {
+								$display .= " <small>(+{$renewals})</small>";
+							}
 							$purchasesHtml = '<a href="#" class="show-customer-purchases" data-user-id="' . $data['user']->id . '" data-user-name="' . htmlspecialchars($data['name']) . '">' .
-								$data['total_purchases'] . '</a>';
+								$display . '</a>';
 							$row[] = $purchasesHtml;
 							break;
 						case 'total_revenue':
@@ -2388,6 +2551,9 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 		// Add modal placeholder
 		$out .= $this->renderCustomerProductsModal();
+
+		// Add tab info modal
+		$out .= $this->renderTabInfoModal('customers');
 
 		return $out;
 	}
@@ -2497,6 +2663,126 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		}
 
 		fclose($fp);
+		exit;
+	}
+
+	/**
+	 * AJAX endpoint: Render purchase details for a specific session
+	 */
+	public function ___executePurchaseDetails(): void {
+		$input = $this->wire('input');
+		$users = $this->wire('users');
+
+		$sessionId = $input->get->text('session_id');
+		if (!$sessionId) {
+			echo '<p style="color:red;">' . $this->_('No session ID provided') . '</p>';
+			exit;
+		}
+
+		// Find the purchase with this session ID
+		$foundPurchase = null;
+		$foundUser = null;
+
+		foreach ($users->find("spl_purchases.count>0") as $user) {
+			foreach ($user->spl_purchases as $item) {
+				$session = (array)$item->meta('stripe_session');
+				if (($session['id'] ?? '') === $sessionId) {
+					$foundPurchase = $item;
+					$foundUser = $user;
+					break 2;
+				}
+			}
+		}
+
+		if (!$foundPurchase || !$foundUser) {
+			echo '<p style="color:red;">' . $this->_('Purchase not found') . '</p>';
+			exit;
+		}
+
+		// Render purchase details
+		$session = (array)$foundPurchase->meta('stripe_session');
+		$lineItems = $session['line_items']['data'] ?? [];
+		$currency = strtoupper($session['currency'] ?? 'EUR');
+		$renewals = (array)$foundPurchase->meta('renewals');
+
+		echo '<h3 class="uk-modal-title">' . $this->_('Purchase Details') . '</h3>';
+
+		// Line Items
+		if (!empty($lineItems)) {
+			echo '<table class="uk-table uk-table-small uk-table-divider">';
+			echo '<thead><tr>';
+			echo '<th>' . $this->_('Product') . '</th>';
+			echo '<th>' . $this->_('Quantity') . '</th>';
+			echo '<th>' . $this->_('Price') . '</th>';
+			echo '<th>' . $this->_('Total') . '</th>';
+			echo '</tr></thead><tbody>';
+
+			$grandTotal = 0;
+			foreach ($lineItems as $li) {
+				$productName = $li['description'] ?? $li['price']['nickname'] ?? 'Unknown';
+				if (isset($li['price']['product']['name'])) {
+					$productName = $li['price']['product']['name'];
+				}
+
+				$quantity = (int)($li['quantity'] ?? 1);
+				$unitAmount = (int)($li['price']['unit_amount'] ?? 0);
+				$amountTotal = (int)($li['amount_total'] ?? 0);
+				$grandTotal += $amountTotal;
+
+				echo '<tr>';
+				echo '<td>' . htmlspecialchars($productName) . '</td>';
+				echo '<td>' . $quantity . '</td>';
+				echo '<td>' . $this->formatPrice($unitAmount, $currency) . '</td>';
+				echo '<td>' . $this->formatPrice($amountTotal, $currency) . '</td>';
+				echo '</tr>';
+
+				// Show renewals for this product (if it's a subscription)
+				$isSubscription = isset($li['price']['recurring']) && $li['price']['recurring'];
+				if ($isSubscription && !empty($renewals)) {
+					// Get the Stripe product ID for matching
+					$stripeProductId = '';
+					if (isset($li['price']['product']['id'])) {
+						$stripeProductId = $li['price']['product']['id'];
+					} elseif (is_string($li['price']['product'])) {
+						$stripeProductId = $li['price']['product'];
+					}
+
+					if ($stripeProductId) {
+						// Look for renewals matching this product
+						// Renewals can be stored with keys like "0#stripe_product_id" or as page IDs
+						$scopeKey = '0#' . $stripeProductId;
+
+						if (isset($renewals[$scopeKey])) {
+							foreach ((array)$renewals[$scopeKey] as $renewal) {
+								$renewalDate = (int)($renewal['date'] ?? 0);
+								$renewalAmount = (int)($renewal['amount'] ?? 0);
+								$grandTotal += $renewalAmount;
+
+								$renewalDateStr = $renewalDate ? date('d.m.Y', $renewalDate) : '-';
+
+								echo '<tr style="background-color: #f8f8f8;">';
+								echo '<td style="padding-left: 2em; font-style: italic;">' .
+									'Renewal am ' . htmlspecialchars($renewalDateStr) . '</td>';
+								echo '<td>1</td>';
+								echo '<td>' . $this->formatPrice($renewalAmount, $currency) . '</td>';
+								echo '<td>' . $this->formatPrice($renewalAmount, $currency) . '</td>';
+								echo '</tr>';
+							}
+						}
+					}
+				}
+			}
+
+
+			// Total row
+			echo '<tr class="uk-text-bold">';
+			echo '<td colspan="3">' . $this->_('Total') . '</td>';
+			echo '<td>' . $this->formatPrice($grandTotal, $currency) . '</td>';
+			echo '</tr>';
+
+			echo '</tbody></table>';
+		}
+
 		exit;
 	}
 
@@ -2901,6 +3187,126 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	}
 
 	/**
+	 * Render info modal for tabs
+	 */
+	protected function renderTabInfoModal(string $tab): string {
+		$modalId = 'modal_tab_info_' . uniqid();
+
+		// Tab-specific content
+		$content = $this->getTabInfoContent($tab);
+
+		return <<<HTML
+		<div id="{$modalId}" class="uk-modal-container" uk-modal>
+			<div class="uk-modal-dialog uk-modal-body" style="max-width:700px">
+				<button class="uk-modal-close-default" type="button" uk-close></button>
+				<div class="tab-info-content">
+					{$content}
+				</div>
+			</div>
+		</div>
+		<script>
+		document.addEventListener('click', function(e) {
+			var target = e.target.closest('.show-tab-info');
+			if (target) {
+				e.preventDefault();
+				var tab = target.getAttribute('data-tab');
+				if (tab === '{$tab}') {
+					UIkit.modal('#{$modalId}').show();
+				}
+			}
+		});
+		</script>
+		HTML;
+	}
+
+	/**
+	 * Get tab-specific info content
+	 */
+	protected function getTabInfoContent(string $tab): string {
+		switch ($tab) {
+			case 'purchases':
+				$title = $this->_('Purchases Tab – Transaction View');
+				$description = $this->_('Shows complete checkout sessions with all purchased products. Each row represents one transaction.');
+				$totalExplanation = '<strong>' . $this->_('Total:') . '</strong> ' . $this->_('Sum of all complete transaction values (full cart amounts including all products purchased together).');
+				$examples = [
+					[
+						'title' => $this->_('Find high-value transactions'),
+						'steps' => $this->_('Use the "Amount Total" filter to find purchases above a certain value, e.g., >500€. Sort by amount to see largest orders first.')
+					],
+					[
+						'title' => $this->_('Track subscription renewals'),
+						'steps' => $this->_('Filter by "Period End" date range to see subscriptions expiring soon. Add "Subscription Status" column to monitor active subscriptions.')
+					],
+					[
+						'title' => $this->_('Analyze product bundles'),
+						'steps' => $this->_('Filter by a specific product to see which other products are frequently purchased together in the same transaction.')
+					]
+				];
+				break;
+
+			case 'products':
+				$title = $this->_('Products Tab – Product Performance View');
+				$description = $this->_('Shows aggregated metrics per product. Each row represents one product with its individual performance data.');
+				$totalExplanation = '<strong>' . $this->_('Total:') . '</strong> ' . $this->_('Sum of revenue generated by each individual product (not transaction totals).');
+				$examples = [
+					[
+						'title' => $this->_('Identify top-performing products'),
+						'steps' => $this->_('Sort by "Revenue" column to see which products generate the most income. Check "Purchases" count to distinguish between high-price vs. high-volume products.')
+					],
+					[
+						'title' => $this->_('Find underperforming products'),
+						'steps' => $this->_('Use "Revenue" filter with a maximum value and "Purchase Period" to identify products that need marketing attention or price adjustments.')
+					],
+					[
+						'title' => $this->_('Analyze subscription products'),
+						'steps' => $this->_('Add "Renewals" column to see which products have recurring revenue. Compare initial purchases vs. renewal counts.')
+					]
+				];
+				break;
+
+			case 'customers':
+				$title = $this->_('Customers Tab – Customer Overview');
+				$description = $this->_('Shows aggregated customer data with lifetime value metrics. Each row represents one customer.');
+				$totalExplanation = '<strong>' . $this->_('Total:') . '</strong> ' . $this->_('Sum of all customer lifetime values across all customers.');
+				$examples = [
+					[
+						'title' => $this->_('Identify VIP customers'),
+						'steps' => $this->_('Sort by "Total Revenue" to find your highest-value customers. Use "Total Purchases" to see repeat purchase behavior.')
+					],
+					[
+						'title' => $this->_('Find inactive customers'),
+						'steps' => $this->_('Use "Last Activity" filter to find customers who haven\'t purchased in 6+ months. Sort by "Total Revenue" to prioritize re-engagement.')
+					],
+					[
+						'title' => $this->_('Segment by purchase behavior'),
+						'steps' => $this->_('Filter by "Total Purchases" to find one-time buyers vs. loyal repeat customers. Analyze differences in product preferences.')
+					]
+				];
+				break;
+
+			default:
+				return '';
+		}
+
+		// Build HTML
+		$html = "<h2 class='uk-modal-title'>{$title}</h2>";
+		$html .= "<p style='margin-bottom:20px'>{$description}</p>";
+		$html .= "<p style='margin-bottom:20px;padding:10px;background:#f8f8f8;border-left:3px solid #0288d1'>{$totalExplanation}</p>";
+		$html .= "<h3 style='margin-top:25px;margin-bottom:15px'>" . $this->_('Use Cases') . "</h3>";
+		$html .= "<dl style='margin-left:0'>";
+
+		foreach ($examples as $i => $example) {
+			$num = $i + 1;
+			$html .= "<dt style='font-weight:600;margin-top:" . ($i > 0 ? '15px' : '0') . ";margin-bottom:5px'>{$num}. {$example['title']}</dt>";
+			$html .= "<dd style='margin-left:20px;color:#666'>{$example['steps']}</dd>";
+		}
+
+		$html .= "</dl>";
+
+		return $html;
+	}
+
+	/**
 	 * Render modal placeholder for customer purchases
 	 */
 	protected function renderCustomerProductsModal(): string {
@@ -2977,9 +3383,10 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		</div>
 		<script>
 		document.addEventListener('click', function(e) {
-			if (e.target.classList.contains('show-product-purchases')) {
+			var target = e.target.closest('.show-product-purchases');
+			if (target) {
 				e.preventDefault();
-				var productKey = e.target.getAttribute('data-product-key');
+				var productKey = target.getAttribute('data-product-key');
 
 				// Show modal
 				UIkit.modal('#{$modalId}').show();
@@ -3016,6 +3423,54 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 					})
 					.catch(function(error) {
 						document.getElementById('product-purchases-content').innerHTML = '<h3 class="uk-modal-title">{$error}</h3><p style="color:red;">{$errorLoading}</p>';
+					});
+			}
+		});
+		</script>
+		HTML;
+	}
+
+	/**
+	 * Render modal for purchase details
+	 */
+	protected function renderPurchaseDetailsModal(): string {
+		$baseUrl = $this->page->url;
+		$modalId = 'modal_purchase_' . uniqid();
+		$loading = $this->_('Loading...');
+		$loadingDetails = $this->_('Loading purchase details...');
+		$error = $this->_('Error');
+		$errorLoading = $this->_('Error loading purchase details');
+
+		return <<<HTML
+		<div id="{$modalId}" class="uk-modal-container" uk-modal>
+			<div class="uk-modal-dialog uk-modal-body">
+				<button class="uk-modal-close-default" type="button" uk-close></button>
+				<div id="purchase-details-content">
+					<h3 class="uk-modal-title">{$loading}</h3>
+					<p>{$loadingDetails}</p>
+				</div>
+			</div>
+		</div>
+		<script>
+		document.addEventListener('click', function(e) {
+			if (e.target.classList.contains('show-purchase-details')) {
+				e.preventDefault();
+				var sessionId = e.target.getAttribute('data-session-id');
+
+				// Show modal
+				UIkit.modal('#{$modalId}').show();
+
+				// Set loading state
+				document.getElementById('purchase-details-content').innerHTML = '<h3 class="uk-modal-title">{$loading}</h3><p>{$loadingDetails}</p>';
+
+				// Fetch purchase details via AJAX
+				fetch('{$baseUrl}purchaseDetails/?session_id=' + encodeURIComponent(sessionId))
+					.then(function(response) { return response.text(); })
+					.then(function(html) {
+						document.getElementById('purchase-details-content').innerHTML = html;
+					})
+					.catch(function(error) {
+						document.getElementById('purchase-details-content').innerHTML = '<h3 class="uk-modal-title">{$error}</h3><p style="color:red;">{$errorLoading}</p>';
 					});
 			}
 		});
