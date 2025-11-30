@@ -1335,6 +1335,15 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 							$value = $lastDate > 0 ? $lastDate : null;
 						}
 
+						// For period_end and last_renewal: if value is null, exclude the purchase
+						// (only show purchases that actually have this date field)
+						if ($column === 'period_end' || $column === 'last_renewal') {
+							if ($value === null) {
+								$skip = true;
+								break 2;
+							}
+						}
+
 						if ($value !== null) {
 							if ($filter['from']) {
 								$fromTs = strtotime($filter['from']);
