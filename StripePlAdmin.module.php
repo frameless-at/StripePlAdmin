@@ -138,7 +138,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	protected array $availableCustomersColumns = [
 		'name'            => ['label' => 'Name'],
 		'email'           => ['label' => 'Email'],
-		'total_purchases' => ['label' => 'Total Purchases'],
+		'total_purchases' => ['label' => 'Purchases'],
 		'total_revenue'   => ['label' => 'Total Revenue'],
 		'first_purchase'  => ['label' => 'First Purchase'],
 		'last_activity'   => ['label' => 'Last Activity'],
@@ -151,7 +151,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		return [
 			'name' => $this->_('Name'),
 			'email' => $this->_('Email'),
-			'total_purchases' => $this->_('Total Purchases'),
+			'total_purchases' => $this->_('Purchases'),
 			'total_revenue' => $this->_('Total Revenue'),
 			'first_purchase' => $this->_('First Purchase'),
 			'last_activity' => $this->_('Last Activity'),
@@ -2005,8 +2005,13 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 							break;
 						case 'purchases':
 							$count = $data['count'];
+							$renewals = $data['renewals'] ?? 0;
 							$productKey = htmlspecialchars($key);
-							$row[] = "<a href='#' class='show-product-purchases' data-product-key='{$productKey}'>{$count}</a>";
+							$display = $count;
+							if ($renewals > 0) {
+								$display .= " <small>(+{$renewals})</small>";
+							}
+							$row[] = "<a href='#' class='show-product-purchases' data-product-key='{$productKey}'>{$display}</a>";
 							break;
 						case 'quantity':
 							$row[] = $data['quantity'];
@@ -2251,6 +2256,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			$totalRevenue = 0;
 			$totalPurchases = 0;
 			$firstPurchase = PHP_INT_MAX;
+			$totalRenewals = 0;
 			$lastPurchase = 0;
 
 			foreach ($user->spl_purchases as $item) {
@@ -2271,6 +2277,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 				$renewals = (array)$item->meta('renewals');
 				foreach ($renewals as $scopeRenewals) {
 					foreach ((array)$scopeRenewals as $renewal) {
+						$totalRenewals++;
 						$totalRevenue += (int)($renewal['amount'] ?? 0);
 					}
 				}
@@ -2283,6 +2290,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 				'name' => $user->title ?: $user->name,
 				'email' => $user->email,
 				'total_purchases' => $totalPurchases,
+				'total_renewals' => $totalRenewals,
 				'total_revenue' => $totalRevenue,
 				'first_purchase' => $firstPurchase,
 				'last_purchase' => $lastPurchase,
@@ -2414,8 +2422,14 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 							$row[] = $this->renderUserEmail($data['email']);
 							break;
 						case 'total_purchases':
+							$purchases = $data['total_purchases'];
+							$renewals = $data['total_renewals'] ?? 0;
+							$display = $purchases;
+							if ($renewals > 0) {
+								$display .= " <small>(+{$renewals})</small>";
+							}
 							$purchasesHtml = '<a href="#" class="show-customer-purchases" data-user-id="' . $data['user']->id . '" data-user-name="' . htmlspecialchars($data['name']) . '">' .
-								$data['total_purchases'] . '</a>';
+								$display . '</a>';
 							$row[] = $purchasesHtml;
 							break;
 						case 'total_revenue':
