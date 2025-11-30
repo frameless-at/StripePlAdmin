@@ -3191,9 +3191,10 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		</div>
 		<script>
 		document.addEventListener('click', function(e) {
-			if (e.target.classList.contains('show-product-purchases')) {
+			var target = e.target.closest('.show-product-purchases');
+			if (target) {
 				e.preventDefault();
-				var productKey = e.target.getAttribute('data-product-key');
+				var productKey = target.getAttribute('data-product-key');
 
 				// Show modal
 				UIkit.modal('#{$modalId}').show();
