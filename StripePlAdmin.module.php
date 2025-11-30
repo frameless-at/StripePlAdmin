@@ -1302,6 +1302,89 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	}
 
 	/**
+	 * Parse search query with AND/OR operators
+	 * Returns array with 'terms' and 'operators'
+	 */
+	protected function parseSearchQuery(string $search): array {
+		$search = trim($search);
+		if (empty($search)) {
+			return ['terms' => [], 'operators' => []];
+		}
+
+		// Split by AND and OR operators (case-insensitive)
+		$pattern = '/\s+(AND|OR)\s+/i';
+		$parts = preg_split($pattern, $search, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY);
+
+		$terms = [];
+		$operators = [];
+
+		for ($i = 0; $i < count($parts); $i++) {
+			$part = trim($parts[$i]);
+			if (empty($part)) continue;
+
+			if (strtoupper($part) === 'AND' || strtoupper($part) === 'OR') {
+				$operators[] = strtoupper($part);
+			} else {
+				$terms[] = strtolower($part);
+			}
+		}
+
+		// If no operators found, treat spaces as OR
+		if (empty($operators) && strpos($search, ' ') !== false) {
+			$terms = array_map('trim', array_map('strtolower', explode(' ', $search)));
+			$terms = array_filter($terms); // Remove empty strings
+			$operators = array_fill(0, count($terms) - 1, 'OR');
+		}
+
+		return ['terms' => $terms, 'operators' => $operators];
+	}
+
+	/**
+	 * Check if text matches search query with AND/OR logic
+	 */
+	protected function matchesSearchQuery(string $text, array $searchTerms): bool {
+		if (empty($searchTerms)) return true;
+
+		$terms = $searchTerms['terms'];
+		$operators = $searchTerms['operators'];
+		$textLower = strtolower($text);
+
+		// Single term
+		if (count($terms) === 1) {
+			return strpos($textLower, $terms[0]) !== false;
+		}
+
+		// Multiple terms with operators
+		$results = [];
+		foreach ($terms as $term) {
+			$results[] = strpos($textLower, $term) !== false;
+		}
+
+		// Evaluate with operators
+		$finalResult = $results[0];
+		for ($i = 0; $i < count($operators); $i++) {
+			if ($operators[$i] === 'AND') {
+				$finalResult = $finalResult && $results[$i + 1];
+			} else { // OR
+				$finalResult = $finalResult || $results[$i + 1];
+			}
+		}
+
+		return $finalResult;
+	}
+
+	/**
+	 * Check if multiple text fields match search query
+	 */
+	protected function matchesSearchQueryMultiple(array $texts, array $searchTerms): bool {
+		if (empty($searchTerms)) return true;
+
+		// Combine all texts into one for matching
+		$combinedText = implode(' ', $texts);
+		return $this->matchesSearchQuery($combinedText, $searchTerms);
+	}
+
+	/**
 	 * Apply filters to purchases data
 	 */
 	protected function applyPurchasesFilters(array $purchases, string $search, array $filters): array {
@@ -1311,13 +1394,13 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			$user = $purchase['user'];
 			$item = $purchase['item'];
 
-			// Search filter
+			// Search filter with AND/OR support
 			if ($search) {
-				$searchLower = strtolower($search);
-				$userEmail = strtolower($user->email);
-				$userName = strtolower($user->title ?: $user->name);
+				$searchTerms = $this->parseSearchQuery($search);
+				$userEmail = $user->email;
+				$userName = $user->title ?: $user->name;
 
-				$matchFound = (strpos($userEmail, $searchLower) !== false) || (strpos($userName, $searchLower) !== false);
+				$matchFound = $this->matchesSearchQueryMultiple([$userEmail, $userName], $searchTerms);
 				if (!$matchFound) continue;
 			}
 
@@ -1417,12 +1500,13 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$filtered = [];
 
 		foreach ($products as $key => $product) {
-			// Search filter
+			// Search filter with AND/OR support
 			if ($search) {
-				$searchLower = strtolower($search);
-				$productName = strtolower($product['name']);
+				$searchTerms = $this->parseSearchQuery($search);
+				$productName = $product['name'];
 
-				if (strpos($productName, $searchLower) === false) continue;
+				$matchFound = $this->matchesSearchQuery($productName, $searchTerms);
+				if (!$matchFound) continue;
 			}
 
 			// Apply column-specific filters
@@ -1489,13 +1573,13 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$filtered = [];
 
 		foreach ($customers as $customer) {
-			// Search filter
+			// Search filter with AND/OR support
 			if ($search) {
-				$searchLower = strtolower($search);
-				$customerName = strtolower($customer['name']);
-				$customerEmail = strtolower($customer['email']);
+				$searchTerms = $this->parseSearchQuery($search);
+				$customerName = $customer['name'];
+				$customerEmail = $customer['email'];
 
-				$matchFound = (strpos($customerName, $searchLower) !== false) || (strpos($customerEmail, $searchLower) !== false);
+				$matchFound = $this->matchesSearchQueryMultiple([$customerName, $customerEmail], $searchTerms);
 				if (!$matchFound) continue;
 			}
 
