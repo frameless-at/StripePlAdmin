@@ -38,7 +38,6 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		'session_id'        => ['label' => 'Session ID', 'type' => 'computed', 'compute' => 'computeSessionId'],
 		'customer_id'       => ['label' => 'Customer ID', 'path' => ['stripe_session', 'customer', 'id']],
 		'customer_name'     => ['label' => 'Customer Name', 'type' => 'computed', 'compute' => 'computeCustomerName'],
-		'payment_status'    => ['label' => 'Payment Status', 'path' => ['stripe_session', 'payment_status']],
 		'currency'          => ['label' => 'Currency', 'path' => ['stripe_session', 'currency']],
 		'amount_total'      => ['label' => 'Amount Total', 'type' => 'computed', 'compute' => 'computeAmountTotal'],
 		'subscription_id'   => ['label' => 'Subscription ID', 'path' => ['stripe_session', 'subscription']],
@@ -66,7 +65,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	 */
 	public static function getDefaults(): array {
 		return [
-			'purchasesColumns' => ['user_email', 'purchase_date', 'product_titles', 'amount_total', 'payment_status'],
+			'purchasesColumns' => ['user_email', 'purchase_date', 'product_titles', 'amount_total'],
 			'productsColumns' => ['name', 'purchases', 'quantity', 'revenue', 'last_purchase'],
 			'customersColumns' => ['name', 'email', 'total_purchases', 'total_revenue', 'first_purchase', 'last_activity'],
 			'purchasesFilters' => ['user_email', 'user_name', 'purchase_date', 'product_titles', 'amount_total'],
@@ -88,7 +87,6 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			'session_id' => $this->_('Session ID'),
 			'customer_id' => $this->_('Customer ID'),
 			'customer_name' => $this->_('Customer Name'),
-			'payment_status' => $this->_('Payment Status'),
 			'currency' => $this->_('Currency'),
 			'amount_total' => $this->_('Amount Total'),
 			'subscription_id' => $this->_('Subscription ID'),
@@ -171,7 +169,6 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			'purchase_date' => $this->_('Purchase Date'),
 			'product_titles' => $this->_('Products'),
 			'amount_total' => $this->_('Amount Total'),
-			'payment_status' => $this->_('Payment Status'),
 			'period_end' => $this->_('Period End'),
 			'last_renewal' => $this->_('Last Renewal'),
 		];
@@ -981,7 +978,6 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			'customer_name' => ['type' => 'search', 'label' => $this->_('Customer'), 'fields' => ['customer_name']],
 			'name' => ['type' => 'search', 'label' => $this->_('Name'), 'fields' => ['name']],
 			'email' => ['type' => 'search', 'label' => $this->_('Email'), 'fields' => ['email']],
-			'payment_status' => ['type' => 'search', 'label' => $this->_('Status'), 'fields' => ['payment_status']],
 
 			// Date filters
 			'purchase_date' => ['type' => 'date_range', 'label' => $this->_('Purchase Date')],
