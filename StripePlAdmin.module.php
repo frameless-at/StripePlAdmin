@@ -1308,6 +1308,31 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 						$value = null;
 						if ($column === 'purchase_date') {
 							$value = (int)$item->get('purchase_date');
+						} elseif ($column === 'period_end') {
+							// Get maximum period_end from period_end_map
+							$map = (array)$item->meta('period_end_map');
+							$maxPeriodEnd = 0;
+							foreach ($map as $key => $val) {
+								// Skip flag keys
+								if (strpos($key, '_paused') !== false || strpos($key, '_canceled') !== false) {
+									continue;
+								}
+								if (is_numeric($val) && (int)$val > $maxPeriodEnd) {
+									$maxPeriodEnd = (int)$val;
+								}
+							}
+							$value = $maxPeriodEnd > 0 ? $maxPeriodEnd : null;
+						} elseif ($column === 'last_renewal') {
+							// Get last renewal date
+							$renewals = (array)$item->meta('renewals');
+							$lastDate = 0;
+							foreach ($renewals as $scopeRenewals) {
+								foreach ((array)$scopeRenewals as $renewal) {
+									$date = (int)($renewal['date'] ?? 0);
+									if ($date > $lastDate) $lastDate = $date;
+								}
+							}
+							$value = $lastDate > 0 ? $lastDate : null;
 						}
 
 						if ($value !== null) {
