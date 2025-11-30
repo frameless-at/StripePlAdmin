@@ -167,7 +167,6 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			'user_name' => $this->_('User Name'),
 			'customer_name' => $this->_('Customer Name'),
 			'purchase_date' => $this->_('Purchase Date'),
-			'product_titles' => $this->_('Products'),
 			'amount_total' => $this->_('Amount Total'),
 			'period_end' => $this->_('Period End'),
 			'last_renewal' => $this->_('Last Renewal'),
@@ -1396,7 +1395,21 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 				$userEmail = $user->email;
 				$userName = $user->title ?: $user->name;
 
-				$matchFound = $this->matchesSearchQueryMultiple([$userEmail, $userName], $searchTerms);
+				// Collect product names from line items
+				$productNames = [];
+				$session = (array)$item->meta('stripe_session');
+				$lineItems = $session['line_items']['data'] ?? [];
+				foreach ($lineItems as $li) {
+					$productName = $li['price']['product']['name']
+						?? $li['description']
+						?? $li['price']['nickname']
+						?? '';
+					if ($productName) {
+						$productNames[] = $productName;
+					}
+				}
+
+				$matchFound = $this->matchesSearchQueryMultiple(array_merge([$userEmail, $userName], $productNames), $searchTerms);
 				if (!$matchFound) continue;
 			}
 
@@ -1443,39 +1456,6 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 								$skip = true;
 								break 2;
 							}
-						}
-						break;
-
-					case 'product_multiselect':
-						$found = false;
-						$productIds = (array)$item->meta('product_ids');
-						$session = (array)$item->meta('stripe_session');
-						$lineItems = $session['line_items']['data'] ?? [];
-
-						foreach ($filter['values'] as $filterProduct) {
-							if (is_numeric($filterProduct)) {
-								if (in_array((int)$filterProduct, array_map('intval', $productIds))) {
-									$found = true;
-									break;
-								}
-							} elseif (strpos($filterProduct, 'stripe:') === 0) {
-								$searchName = substr($filterProduct, 7);
-								foreach ($lineItems as $li) {
-									$productName = $li['price']['product']['name']
-										?? $li['description']
-										?? $li['price']['nickname']
-										?? '';
-									if ($productName === $searchName) {
-										$found = true;
-										break 2;
-									}
-								}
-							}
-						}
-
-						if (!$found) {
-							$skip = true;
-							break 2;
 						}
 						break;
 				}
