@@ -1298,13 +1298,39 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 	/**
 	 * Parse search query with AND/OR operators
+	 *
+	 * Supports:
+	 * - AND/OR operators (e.g., "scale AND it AND up")
+	 * - + as AND operator (e.g., "scale+it+up" or "scale + it + up")
+	 * - Quoted phrases (e.g., "scale it up" to search for the exact phrase)
+	 * - Spaces treated as OR when no explicit operators are used
+	 *
 	 * Returns array with 'terms' and 'operators'
 	 */
 	protected function parseSearchQuery(string $search): array {
-		$search = trim($search);
-		if (empty($search)) {
+		$originalSearch = trim($search);
+		if (empty($originalSearch)) {
 			return ['terms' => [], 'operators' => []];
 		}
+
+		$search = $originalSearch;
+
+		// Extract quoted phrases first and replace with placeholders
+		$quotedPhrases = [];
+		$placeholder = '___QUOTED_PHRASE___';
+
+		// Match both single and double quotes
+		if (preg_match_all('/"([^"]+)"|\'([^\']+)\'/', $search, $matches)) {
+			foreach ($matches[0] as $i => $fullMatch) {
+				$phrase = $matches[1][$i] ?: $matches[2][$i];
+				$quotedPhrases[] = $phrase;
+				// Replace quoted phrase with placeholder
+				$search = str_replace($fullMatch, $placeholder . $i . $placeholder, $search);
+			}
+		}
+
+		// Replace + with AND (with or without spaces around +)
+		$search = preg_replace('/\s*\+\s*/', ' AND ', $search);
 
 		// Split by AND and OR operators (case-insensitive)
 		$pattern = '/\s+(AND|OR)\s+/i';
@@ -1320,13 +1346,20 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			if (strtoupper($part) === 'AND' || strtoupper($part) === 'OR') {
 				$operators[] = strtoupper($part);
 			} else {
-				$terms[] = strtolower($part);
+				// Check if this part contains a quoted phrase placeholder
+				if (preg_match('/' . preg_quote($placeholder, '/') . '(\d+)' . preg_quote($placeholder, '/') . '/', $part, $match)) {
+					$index = (int)$match[1];
+					$terms[] = strtolower($quotedPhrases[$index]);
+				} else {
+					$terms[] = strtolower($part);
+				}
 			}
 		}
 
-		// If no operators found, treat spaces as OR
-		if (empty($operators) && strpos($search, ' ') !== false) {
-			$terms = array_map('trim', array_map('strtolower', explode(' ', $search)));
+		// If no operators found, treat spaces as OR (unless we only have quoted phrases)
+		if (empty($operators) && strpos($originalSearch, ' ') !== false && empty($quotedPhrases)) {
+			// Re-parse from original search
+			$terms = array_map('trim', array_map('strtolower', explode(' ', $originalSearch)));
 			$terms = array_filter($terms); // Remove empty strings
 			$operators = array_fill(0, count($terms) - 1, 'OR');
 		}
