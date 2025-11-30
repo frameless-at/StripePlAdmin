@@ -855,9 +855,30 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	}
 
 	/**
+	 * Check if a purchase contains subscription products
+	 */
+	protected function hasSubscriptionProducts(Page $item): bool {
+		$session = (array)$item->meta('stripe_session');
+		$lineItems = $session['line_items']['data'] ?? [];
+
+		foreach ($lineItems as $li) {
+			if (isset($li['price']['recurring']) && $li['price']['recurring']) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
 	 * Compute subscription status
 	 */
 	protected function computeSubscriptionStatus(User $user, Page $item): string {
+		// Only show status for purchases with subscription products
+		if (!$this->hasSubscriptionProducts($item)) {
+			return '–';
+		}
+
 		$map = (array)$item->meta('period_end_map');
 
 		if (empty($map)) {
@@ -904,6 +925,11 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	 * Compute period end dates
 	 */
 	protected function computePeriodEnd(User $user, Page $item): string {
+		// Only show period end for purchases with subscription products
+		if (!$this->hasSubscriptionProducts($item)) {
+			return '–';
+		}
+
 		$map = (array)$item->meta('period_end_map');
 
 		$dates = [];
