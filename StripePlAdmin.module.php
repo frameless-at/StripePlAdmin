@@ -3329,9 +3329,10 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		</div>
 		<script>
 		document.addEventListener('click', function(e) {
-			if (e.target.classList.contains('show-customer-purchases')) {
+			var target = e.target.closest('.show-customer-purchases');
+			if (target) {
 				e.preventDefault();
-				var userId = e.target.getAttribute('data-user-id');
+				var userId = target.getAttribute('data-user-id');
 
 				// Show modal
 				UIkit.modal('#{$modalId}').show();
@@ -3453,9 +3454,10 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		</div>
 		<script>
 		document.addEventListener('click', function(e) {
-			if (e.target.classList.contains('show-purchase-details')) {
+			var target = e.target.closest('.show-purchase-details');
+			if (target) {
 				e.preventDefault();
-				var sessionId = e.target.getAttribute('data-session-id');
+				var sessionId = target.getAttribute('data-session-id');
 
 				// Show modal
 				UIkit.modal('#{$modalId}').show();
