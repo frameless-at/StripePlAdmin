@@ -10,22 +10,27 @@ Customers with multiple active Stripe accounts wanted a better, more complete ov
 
 ### Purchases Tab
 ![Purchases Overview](screenshots/purchases-overview.png)
+
 *Transaction history with customer information, subscription status, and renewal tracking. Filterable by date ranges, products, amounts, and more. Customer names and product titles are clickable for detailed views.*
 
 ### Products Tab
 ![Products Overview](screenshots/products-overview.png)
+
 *Aggregated product performance metrics showing total purchases, revenue, quantities, and renewal counts per product. Product names are clickable and display all purchases of that product in a modal.*
 
 ### Customers Tab
 ![Customers Overview](screenshots/customers-overview.png)
+
 *Customer lifetime value analysis with revenue filter (min. €1000). Shows total purchases, revenue, first purchase date, and last activity per customer. Click on names or purchase count to view detailed purchase history.*
 
 ### Purchase Details Modal
 ![Purchase Details Modal](screenshots/purchase-details.png)
+
 *Interactive modal showing complete purchase details: original purchase plus all renewals with dates and amounts. Automatic calculation of total revenue. Opened by clicking on product titles.*
 
 ### Customer Purchases Modal
 ![Customer Purchases Modal](screenshots/customers-details.png)
+
 *Complete purchase history for a customer showing 8 purchases and 2 renewals. Displays all products, amounts, types (Purchase/Renewal/Subscription), status, and period end dates. Sortable and filterable.*
 
 ## What It Does
@@ -167,8 +172,7 @@ This module is a **viewing and analysis tool** that reads purchase data stored b
 
 ## Author
 
-**frameless Media**
-[office@frameless.at](mailto:office@frameless.at)
+**[frameless Media](https://frameless.at/en)**
 
 ## License
 
