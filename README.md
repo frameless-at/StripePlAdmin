@@ -8,15 +8,15 @@ Customers with multiple active Stripe accounts wanted a better, more complete ov
 
 ## Screenshots
 
-### Purchases View
+### Purchases Tab
 ![Purchases Overview](screenshots/purchases-overview.png)
 *Transaction history with customer information, subscription status, and renewal tracking. Filterable by date ranges, products, amounts, and more. Customer names and product titles are clickable for detailed views.*
 
-### Products View
+### Products Tab
 ![Products Overview](screenshots/products-overview.png)
 *Aggregated product performance metrics showing total purchases, revenue, quantities, and renewal counts per product. Product names are clickable and display all purchases of that product in a modal.*
 
-### Customers View
+### Customers Tab
 ![Customers Overview](screenshots/customers-overview.png)
 *Customer lifetime value analysis with revenue filter (min. €1000). Shows total purchases, revenue, first purchase date, and last activity per customer. Click on names or purchase count to view detailed purchase history.*
 
