@@ -10,23 +10,23 @@ Customers with multiple active Stripe accounts wanted a better, more complete ov
 
 ### Purchases View
 ![Purchases Overview](screenshots/purchases-overview.png)
-*Transaktionshistorie mit Kundeninformationen, Subscription Status und Renewal Tracking. Filterbar nach Datum, Produkten, Beträgen und mehr. Customer Names und Product Titles sind klickbar für Detail-Ansichten.*
+*Transaction history with customer information, subscription status, and renewal tracking. Filterable by date ranges, products, amounts, and more. Customer names and product titles are clickable for detailed views.*
 
 ### Products View
 ![Products Overview](screenshots/products-overview.png)
-*Aggregierte Produkt-Performance Metriken: Gesamtkäufe, Revenue, Mengen und Renewal Counts pro Produkt. Produktnamen sind klickbar und zeigen alle Käufe dieses Produkts in einem Modal.*
+*Aggregated product performance metrics showing total purchases, revenue, quantities, and renewal counts per product. Product names are clickable and display all purchases of that product in a modal.*
 
 ### Customers View
 ![Customers Overview](screenshots/customers-overview.png)
-*Customer Lifetime Value Analyse mit Revenue-Filter (min. €1000). Zeigt Gesamtkäufe, Revenue, First Purchase und Last Activity pro Kunde. Klick auf Namen oder Purchase Count öffnet detaillierte Kaufhistorie.*
+*Customer lifetime value analysis with revenue filter (min. €1000). Shows total purchases, revenue, first purchase date, and last activity per customer. Click on names or purchase count to view detailed purchase history.*
 
 ### Purchase Details Modal
 ![Purchase Details Modal](screenshots/purchase-details.png)
-*Interaktives Modal mit kompletten Purchase Details: Original-Kauf plus alle Renewals mit Datum und Betrag. Automatische Berechnung des Gesamtumsatzes. Wird durch Klick auf Product Titles geöffnet.*
+*Interactive modal showing complete purchase details: original purchase plus all renewals with dates and amounts. Automatic calculation of total revenue. Opened by clicking on product titles.*
 
 ### Customer Purchases Modal
 ![Customer Purchases Modal](screenshots/customers-details.png)
-*Komplette Kaufhistorie eines Kunden mit 8 Purchases und 2 Renewals. Zeigt alle Produkte, Beträge, Types (Purchase/Renewal/Subscription), Status und Period End. Sortierbar und filterbar.*
+*Complete purchase history for a customer showing 8 purchases and 2 renewals. Displays all products, amounts, types (Purchase/Renewal/Subscription), status, and period end dates. Sortable and filterable.*
 
 ## What It Does
 
