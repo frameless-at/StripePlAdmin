@@ -97,7 +97,7 @@ Navigate to **Admin > Setup > Modules > Configure > Stripe PL Admin**:
 Use the search functionality with boolean operators:
 
 - **AND Search**: `john +smith` or `john AND smith` - finds purchases with both terms
-- **OR Search**: `john OR jane` - finds purchases with either term
+- **OR Search**: `john jane` or `john OR smith` - finds purchases with either term
 - **Exact Phrase**: `"John Smith"` - finds exact phrase match
 - **Combined**: `"Premium Plan" +active` - finds "Premium Plan" that also contains "active"
 
