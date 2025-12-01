@@ -28,7 +28,7 @@ Customers with multiple active Stripe accounts wanted a better, more complete ov
   - Period End filtering (subscription end dates)
   - Last Renewal filtering
   - Automatically excludes non-subscriptions when using subscription-specific filters
-- **Real-Time Data**: Direct integration with Stripe API for up-to-date information
+- **Stripe Session Data**: Displays complete Stripe session information stored by StripePaymentLinks module
 - **Subscription Management**: Track subscription status, renewals, and period end dates
 - **Renewal Display**: See renewal counts and amounts directly in purchase details
 - **Data Export**: Export purchase, product, or customer data to CSV format
@@ -41,6 +41,20 @@ Customers with multiple active Stripe accounts wanted a better, more complete ov
 - ProcessWire 3.x or higher
 - `StripePaymentLinks` module (dependency)
 - PHP 7.4 or higher (compatible with ProcessWire framework requirements)
+
+## How It Works
+
+This module is a **viewing and analysis tool** for Stripe data already stored in ProcessWire:
+
+1. The `StripePaymentLinks` module handles Stripe API integration and stores purchase data in ProcessWire user fields
+2. This `StripePlAdmin` module reads that stored data and provides:
+   - Advanced filtering and search capabilities
+   - Multiple view perspectives (Purchases, Products, Customers)
+   - Interactive modals for detailed information
+   - CSV export functionality
+   - Statistical analysis and reporting
+
+**Important**: This module does not make direct Stripe API calls. It displays data synchronized by the StripePaymentLinks module. For real-time Stripe data, ensure the StripePaymentLinks module is properly configured and receiving webhook events from Stripe.
 
 ## Installation
 
