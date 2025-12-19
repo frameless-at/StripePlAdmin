@@ -330,50 +330,12 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$this->headline($this->_('Purchases Overview'));
 		$this->browserTitle($this->_('Purchases'));
 
+		// Tab navigation
+		$out = $this->renderTabs('purchases');
+
 		$input = $this->wire('input');
 		$users = $this->wire('users');
 		$sanitizer = $this->wire('sanitizer');
-
-		// DEBUG: Show raw purchase data
-		if ($input->get('debug') === 'raw') {
-			$out = "<h2>Debug: Raw Purchase Data</h2>";
-			$out .= "<pre style='background:#f5f5f5;padding:20px;overflow:auto;'>";
-			foreach ($users->find("spl_purchases.count>0") as $user) {
-				$out .= "\n<strong>User: {$user->email}</strong>\n";
-				foreach ($user->spl_purchases as $item) {
-					$session = $item->meta('stripe_session');
-					$renewals = $item->meta('renewals');
-					$purchaseDate = date('Y-m-d H:i', $item->get('purchase_date'));
-
-					$out .= "  Purchase Date: {$purchaseDate}\n";
-					$out .= "  Line Items:\n";
-					foreach (($session['line_items']['data'] ?? []) as $li) {
-						$amount = $li['amount_total'] ?? 0;
-						$desc = $li['description'] ?? 'N/A';
-						$out .= "    - {$desc}: " . ($amount / 100) . " {$li['currency']}\n";
-					}
-					$out .= "  Renewals:\n";
-					if (empty($renewals)) {
-						$out .= "    (none)\n";
-					} else {
-						foreach ($renewals as $scope => $scopeRenewals) {
-							foreach ($scopeRenewals as $renewal) {
-								$amt = ($renewal['amount'] ?? 0) / 100;
-								$date = date('Y-m-d', $renewal['created'] ?? 0);
-								$out .= "    - {$date}: {$amt} EUR\n";
-							}
-						}
-					}
-					$out .= "\n";
-				}
-				$out .= str_repeat("-", 80) . "\n\n";
-			}
-			$out .= "</pre>";
-			return $out;
-		}
-
-		// Tab navigation
-		$out = $this->renderTabs('purchases');
 
 		// Get config
 		$columns = $this->purchasesColumns ?: self::getDefaults()['purchasesColumns'];
