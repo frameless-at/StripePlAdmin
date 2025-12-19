@@ -494,13 +494,6 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 						$total += (int)($li['amount_total'] ?? 0);
 						if (!$currency) $currency = strtoupper($li['currency'] ?? $session['currency'] ?? '');
 					}
-					// Add renewal amounts
-					$renewals = (array)$purchase['item']->meta('renewals');
-					foreach ($renewals as $scopeRenewals) {
-						foreach ((array)$scopeRenewals as $renewal) {
-							$total += (int)($renewal['amount'] ?? 0);
-						}
-					}
 
 					// Track sum
 					if (!isset($sums[$col])) $sums[$col] = 0;
@@ -692,13 +685,6 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			$total = 0;
 			foreach ($lineItems as $li) {
 				$total += (int)($li['amount_total'] ?? 0);
-			}
-			// Add renewal amounts
-			$renewals = (array)$item->meta('renewals');
-			foreach ($renewals as $scopeRenewals) {
-				foreach ((array)$scopeRenewals as $renewal) {
-					$total += (int)($renewal['amount'] ?? 0);
-				}
 			}
 			return $total;
 		}
