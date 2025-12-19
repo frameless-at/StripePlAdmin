@@ -11,7 +11,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	public static function getModuleInfo(): array {
 		return [
 			'title'       => 'Stripe PL Admin',
-			'version'     => '1.0.0',
+			'version'     => '1.0.1',
 			'summary'     => 'View customer purchases with configurable metadata columns.',
 			'author'      => 'frameless Media',
 			'icon'        => 'table',
