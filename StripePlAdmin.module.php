@@ -494,13 +494,6 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 						$total += (int)($li['amount_total'] ?? 0);
 						if (!$currency) $currency = strtoupper($li['currency'] ?? $session['currency'] ?? '');
 					}
-					// Add renewal amounts
-					$renewals = (array)$purchase['item']->meta('renewals');
-					foreach ($renewals as $scopeRenewals) {
-						foreach ((array)$scopeRenewals as $renewal) {
-							$total += (int)($renewal['amount'] ?? 0);
-						}
-					}
 
 					// Track sum
 					if (!isset($sums[$col])) $sums[$col] = 0;
@@ -692,13 +685,6 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			$total = 0;
 			foreach ($lineItems as $li) {
 				$total += (int)($li['amount_total'] ?? 0);
-			}
-			// Add renewal amounts
-			$renewals = (array)$item->meta('renewals');
-			foreach ($renewals as $scopeRenewals) {
-				foreach ((array)$scopeRenewals as $renewal) {
-					$total += (int)($renewal['amount'] ?? 0);
-				}
 			}
 			return $total;
 		}
@@ -1916,9 +1902,15 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 					}
 				}
 
-				// Aggregate renewals - add to revenue
+				// Aggregate renewals - add to revenue (only for actual subscription products)
 				$renewals = (array)$item->meta('renewals');
+				$periodEndMap = (array)$item->meta('period_end_map');
 				foreach ($renewals as $scopeKey => $scopeRenewals) {
+					// Skip renewals for non-subscription products
+					if (!isset($periodEndMap[$scopeKey])) {
+						continue;
+					}
+
 					// Match scope key to product key
 					$renewalKey = null;
 					if (is_numeric($scopeKey) && (int)$scopeKey > 0) {
@@ -2224,9 +2216,15 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 					}
 				}
 
-				// Aggregate renewals - add to revenue
+				// Aggregate renewals - add to revenue (only for actual subscription products)
 				$renewals = (array)$item->meta('renewals');
+				$periodEndMap = (array)$item->meta('period_end_map');
 				foreach ($renewals as $scopeKey => $scopeRenewals) {
+					// Skip renewals for non-subscription products
+					if (!isset($periodEndMap[$scopeKey])) {
+						continue;
+					}
+
 					$renewalKey = null;
 					if (is_numeric($scopeKey) && (int)$scopeKey > 0) {
 						$renewalKey = (int)$scopeKey;
@@ -2342,9 +2340,14 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 					$totalRevenue += (int)($li['amount_total'] ?? 0);
 				}
 
-				// Add renewals
+				// Add renewals (only for actual subscription products)
 				$renewals = (array)$item->meta('renewals');
-				foreach ($renewals as $scopeRenewals) {
+				$periodEndMap = (array)$item->meta('period_end_map');
+				foreach ($renewals as $scopeKey => $scopeRenewals) {
+					// Skip renewals for non-subscription products
+					if (!isset($periodEndMap[$scopeKey])) {
+						continue;
+					}
 					foreach ((array)$scopeRenewals as $renewal) {
 						$totalRenewals++;
 						$totalRevenue += (int)($renewal['amount'] ?? 0);
@@ -2587,8 +2590,14 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 					$totalRevenue += (int)($li['amount_total'] ?? 0);
 				}
 
+				// Add renewals (only for actual subscription products)
 				$renewals = (array)$item->meta('renewals');
-				foreach ($renewals as $scopeRenewals) {
+				$periodEndMap = (array)$item->meta('period_end_map');
+				foreach ($renewals as $scopeKey => $scopeRenewals) {
+					// Skip renewals for non-subscription products
+					if (!isset($periodEndMap[$scopeKey])) {
+						continue;
+					}
 					foreach ((array)$scopeRenewals as $renewal) {
 						$totalRevenue += (int)($renewal['amount'] ?? 0);
 					}
@@ -2885,6 +2894,14 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			// Process renewals
 			$renewals = (array)$item->meta('renewals');
 			foreach ($renewals as $scopeKey => $scopeRenewals) {
+				// Get subscription status first to check if this is actually a subscription
+				$periodEndMap = (array)$item->meta('period_end_map');
+
+				// Skip renewals for non-subscription products (no period_end_map entry)
+				if (!isset($periodEndMap[$scopeKey])) {
+					continue;
+				}
+
 				// Determine product name from scope key
 				$productName = 'Unknown';
 				if (is_numeric($scopeKey) && (int)$scopeKey > 0) {
@@ -2913,23 +2930,20 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 					$renewalAmount = (int)($renewal['amount'] ?? 0);
 
 					// Get subscription status
-					$periodEndMap = (array)$item->meta('period_end_map');
 					$status = '-';
 					$periodEnd = '-';
 
-					if (isset($periodEndMap[$scopeKey])) {
-						$periodEndTs = (int)$periodEndMap[$scopeKey];
-						$periodEnd = $periodEndTs ? date('Y-m-d', $periodEndTs) : '-';
+					$periodEndTs = (int)$periodEndMap[$scopeKey];
+					$periodEnd = $periodEndTs ? date('Y-m-d', $periodEndTs) : '-';
 
-						if (isset($periodEndMap[$scopeKey . '_canceled'])) {
-							$status = 'Canceled';
-						} elseif (isset($periodEndMap[$scopeKey . '_paused'])) {
-							$status = 'Paused';
-						} elseif ($periodEndTs < time()) {
-							$status = 'Expired';
-						} else {
-							$status = 'Active';
-						}
+					if (isset($periodEndMap[$scopeKey . '_canceled'])) {
+						$status = 'Canceled';
+					} elseif (isset($periodEndMap[$scopeKey . '_paused'])) {
+						$status = 'Paused';
+					} elseif ($periodEndTs < time()) {
+						$status = 'Expired';
+					} else {
+						$status = 'Active';
 					}
 
 					$purchasesData[] = [
