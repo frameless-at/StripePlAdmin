@@ -14,6 +14,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			'version'     => '1.0.1',
 			'summary'     => 'View customer purchases with configurable metadata columns.',
 			'author'      => 'frameless Media',
+			'href'     		=> 'https://github.com/frameless-at/StripePlAdmin',
 			'icon'        => 'table',
 			'requires'    => ['StripePaymentLinks'],
 			'page'        => [
