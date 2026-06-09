@@ -11,8 +11,8 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	public static function getModuleInfo(): array {
 		return [
 			'title'       => 'Stripe PL Admin',
-			'version'     => '1.0.1',
-			'summary'     => 'View customer purchases with configurable metadata columns.',
+			'version'     => '1.1.0',
+			'summary'     => 'View customer purchases and withdrawals with configurable metadata columns.',
 			'author'      => 'frameless Media',
 			'href'     		=> 'https://github.com/frameless-at/StripePlAdmin',
 			'icon'        => 'table',
@@ -72,6 +72,8 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			'purchasesFilters' => ['user_email', 'user_name', 'purchase_date', 'product_titles', 'amount_total'],
 			'productsFilters' => ['name', 'revenue', 'purchases', 'quantity', 'purchase_period'],
 			'customersFilters' => ['name', 'email', 'total_revenue', 'total_purchases', 'first_purchase'],
+			'withdrawalsColumns' => ['received_at', 'name', 'email', 'product', 'order_id', 'status', 'admin_notes'],
+			'withdrawalsFilters' => ['status', 'received_at', 'email', 'product'],
 			'itemsPerPage' => 25,
 		];
 	}
@@ -160,6 +162,89 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	}
 
 	/**
+	 * Available columns for Withdrawals tab
+	 *
+	 * Maps to the spl_withdrawals repeater sub-fields created by the main
+	 * StripePaymentLinks module. 'field' is the repeater sub-field name;
+	 * 'type' drives special rendering (date, bool, status, linked, notes).
+	 */
+	protected array $availableWithdrawalsColumns = [
+		'received_at'       => ['label' => 'Received At', 'field' => 'spl_withdrawal_received_at', 'type' => 'date'],
+		'name'              => ['label' => 'Consumer Name', 'field' => 'spl_withdrawal_name'],
+		'email'             => ['label' => 'Consumer Email', 'field' => 'spl_withdrawal_email', 'type' => 'email'],
+		'user_email'        => ['label' => 'User Account', 'type' => 'user_email'],
+		'product'           => ['label' => 'Product', 'field' => 'spl_withdrawal_product'],
+		'order_id'          => ['label' => 'Order / Session ID', 'field' => 'spl_withdrawal_order_id'],
+		'order_date'        => ['label' => 'Order Date', 'field' => 'spl_withdrawal_order_date', 'type' => 'date'],
+		'reason'            => ['label' => 'Reason', 'field' => 'spl_withdrawal_reason'],
+		'status'            => ['label' => 'Status', 'type' => 'status'],
+		'confirmation_sent' => ['label' => 'Receipt Sent', 'field' => 'spl_withdrawal_confirmation_sent', 'type' => 'bool'],
+		'linked_purchase'   => ['label' => 'Linked Purchase', 'type' => 'linked'],
+		'admin_notes'       => ['label' => 'Admin Notes', 'field' => 'spl_withdrawal_admin_notes', 'type' => 'notes'],
+	];
+
+	/**
+	 * Get translatable withdrawal column labels
+	 */
+	protected function getWithdrawalColumnLabels(): array {
+		return [
+			'received_at'       => $this->_('Received At'),
+			'name'              => $this->_('Consumer Name'),
+			'email'             => $this->_('Consumer Email'),
+			'user_email'        => $this->_('User Account'),
+			'product'           => $this->_('Product'),
+			'order_id'          => $this->_('Order / Session ID'),
+			'order_date'        => $this->_('Order Date'),
+			'reason'            => $this->_('Reason'),
+			'status'            => $this->_('Status'),
+			'confirmation_sent' => $this->_('Receipt Sent'),
+			'linked_purchase'   => $this->_('Linked Purchase'),
+			'admin_notes'       => $this->_('Admin Notes'),
+		];
+	}
+
+	/**
+	 * Withdrawal status options (must match the FieldtypeOptions values set by
+	 * the StripePaymentLinks main module on the spl_withdrawal_status field).
+	 */
+	protected function getWithdrawalStatusOptions(): array {
+		return [
+			'received'         => $this->_('Received'),
+			'verified-valid'   => $this->_('Verified valid'),
+			'verified-invalid' => $this->_('Verified invalid'),
+			'completed'        => $this->_('Completed'),
+		];
+	}
+
+	/**
+	 * Extract the stored status value (e.g. "received") from a withdrawal item.
+	 * FieldtypeOptions returns a SelectableOption object; casting it to string
+	 * yields the title, so we read ->value explicitly (falling back to title).
+	 */
+	protected function getWithdrawalStatusValue(Page $item): string {
+		$opt = $item->get('spl_withdrawal_status');
+		if (is_object($opt)) {
+			$value = (string)$opt->value;
+			return $value !== '' ? $value : (string)$opt->title;
+		}
+		return (string)$opt;
+	}
+
+	/**
+	 * Get all available filters for Withdrawals tab
+	 */
+	protected function getAvailableWithdrawalsFilters(): array {
+		return [
+			'status'      => $this->_('Status'),
+			'received_at' => $this->_('Received At'),
+			'email'       => $this->_('Consumer Email'),
+			'name'        => $this->_('Consumer Name'),
+			'product'     => $this->_('Product'),
+			'order_id'    => $this->_('Order / Session ID'),
+		];
+	}
+
+	/**
 	 * Get all available filters for Purchases tab
 	 */
 	protected function getAvailablePurchasesFilters(): array {
@@ -216,6 +301,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$columnLabels = $instance->getColumnLabels();
 		$productLabels = $instance->getProductColumnLabels();
 		$customerLabels = $instance->getCustomerColumnLabels();
+		$withdrawalLabels = $instance->getWithdrawalColumnLabels();
 
 		// Purchases Tab
 		$tab1 = $modules->get('InputfieldFieldset');
@@ -306,6 +392,37 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$tab3->add($f);
 
 		$wrapper->add($tab3);
+
+		// Withdrawals Tab
+		$tab5 = $modules->get('InputfieldFieldset');
+		$tab5->label = $instance->_('Withdrawals');
+		$tab5->collapsed = Inputfield::collapsedNo;
+
+		$f = $modules->get('InputfieldAsmSelect');
+		$f->name = 'withdrawalsColumns';
+		$f->label = $instance->_('Columns for Withdrawals tab');
+		$f->description = $instance->_('Select and order the columns to show in the withdrawals table.');
+		$f->notes = $instance->_('Requires the Withdrawals feature of the StripePaymentLinks main module (spl_withdrawals field).');
+
+		foreach ($instance->availableWithdrawalsColumns as $key => $col) {
+			$f->addOption($key, $withdrawalLabels[$key] ?? $col['label']);
+		}
+		$f->value = $data['withdrawalsColumns'] ?? [];
+		$tab5->add($f);
+
+		// Filters for Withdrawals tab
+		$f = $modules->get('InputfieldAsmSelect');
+		$f->name = 'withdrawalsFilters';
+		$f->label = $instance->_('Filters for Withdrawals tab');
+		$f->description = $instance->_('Select which filters should be available. Only filters matching selected columns will be shown.');
+
+		foreach ($instance->getAvailableWithdrawalsFilters() as $key => $label) {
+			$f->addOption($key, $label);
+		}
+		$f->value = $data['withdrawalsFilters'] ?? [];
+		$tab5->add($f);
+
+		$wrapper->add($tab5);
 
 		// General settings
 		$tab4 = $modules->get('InputfieldFieldset');
@@ -662,6 +779,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$descendingColumns = [
 			// Dates
 			'purchase_date', 'period_end', 'last_renewal', 'last_purchase', 'first_purchase', 'last_activity',
+			'received_at', 'order_date',
 			// Money
 			'amount_total', 'revenue', 'total_revenue',
 			// Numeric
@@ -1017,6 +1135,16 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			'product_titles' => ['type' => 'product_multiselect', 'label' => $this->_('Products')],
 		];
 
+		// Withdrawals context uses a few additional / overriding filters
+		if ($context === 'withdrawals') {
+			$filterMap['name']        = ['type' => 'search', 'label' => $this->_('Search'), 'fields' => ['name']];
+			$filterMap['email']       = ['type' => 'search', 'label' => $this->_('Search'), 'fields' => ['email']];
+			$filterMap['product']     = ['type' => 'search', 'label' => $this->_('Search'), 'fields' => ['product']];
+			$filterMap['order_id']    = ['type' => 'search', 'label' => $this->_('Search'), 'fields' => ['order_id']];
+			$filterMap['received_at'] = ['type' => 'date_range', 'label' => $this->_('Received At')];
+			$filterMap['status']      = ['type' => 'select', 'label' => $this->_('Status'), 'options' => $this->getWithdrawalStatusOptions()];
+		}
+
 		return $filterMap[$column] ?? null;
 	}
 
@@ -1035,6 +1163,8 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			$configuredFilters = $this->productsFilters ?: self::getDefaults()['productsFilters'];
 		} elseif ($context === 'customers') {
 			$configuredFilters = $this->customersFilters ?: self::getDefaults()['customersFilters'];
+		} elseif ($context === 'withdrawals') {
+			$configuredFilters = $this->withdrawalsFilters ?: self::getDefaults()['withdrawalsFilters'];
 		}
 
 		// Build form
@@ -1169,6 +1299,21 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 					$f->value = $filterProducts;
 					$form->add($f);
 					break;
+
+				case 'select':
+					/** @var InputfieldSelect $f */
+					$f = $modules->get('InputfieldSelect');
+					$f->name = 'filter_' . strtolower(str_replace(' ', '_', $config['label']));
+					$f->label = $config['label'];
+					$f->columnWidth = 20;
+					$f->collapsed = Inputfield::collapsedNever;
+					$f->addOption('', $this->_('All'));
+					foreach (($config['options'] ?? []) as $value => $label) {
+						$f->addOption($value, $label);
+					}
+					$f->value = $input->get($f->name);
+					$form->add($f);
+					break;
 			}
 		}
 
@@ -1297,6 +1442,13 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 						$filters[$column] = ['type' => 'product_multiselect', 'values' => $products];
 					}
 					break;
+
+				case 'select':
+					$val = $sanitizer->text($input->get('filter_' . $label));
+					if ($val !== '' && $val !== null) {
+						$filters[$column] = ['type' => 'select', 'value' => $val];
+					}
+					break;
 			}
 		}
 
@@ -1307,6 +1459,8 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			return $this->applyProductsFilters($data, $search, $filters);
 		} elseif ($context === 'customers') {
 			return $this->applyCustomersFilters($data, $search, $filters);
+		} elseif ($context === 'withdrawals') {
+			return $this->applyWithdrawalsFilters($data, $search, $filters);
 		}
 
 		return $data;
@@ -1699,6 +1853,71 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	/**
 	 * Render pagination row with pager and export button
 	 */
+	/**
+	 * Apply filters to withdrawals data.
+	 *
+	 * Each entry is ['user' => User, 'item' => Page] where item is an
+	 * spl_withdrawals repeater item.
+	 */
+	protected function applyWithdrawalsFilters(array $withdrawals, string $search, array $filters): array {
+		$filtered = [];
+
+		foreach ($withdrawals as $entry) {
+			$user = $entry['user'];
+			$item = $entry['item'];
+
+			// Search across the consumer-facing text fields + linked user email
+			if ($search) {
+				$searchTerms = $this->parseSearchQuery($search);
+				$haystack = [
+					(string)$item->get('spl_withdrawal_name'),
+					(string)$item->get('spl_withdrawal_email'),
+					(string)$item->get('spl_withdrawal_product'),
+					(string)$item->get('spl_withdrawal_order_id'),
+					(string)$item->get('spl_withdrawal_reason'),
+					(string)($user ? $user->email : ''),
+				];
+				if (!$this->matchesSearchQueryMultiple($haystack, $searchTerms)) continue;
+			}
+
+			$skip = false;
+			foreach ($filters as $column => $filter) {
+				switch ($filter['type']) {
+					case 'date_range':
+						$value = null;
+						if ($column === 'received_at') {
+							$value = (int)$item->get('spl_withdrawal_received_at');
+						} elseif ($column === 'order_date') {
+							$value = (int)$item->get('spl_withdrawal_order_date');
+						}
+						if ($value !== null && $value > 0) {
+							if (!empty($filter['from'])) {
+								$fromTs = strtotime($filter['from']);
+								if ($fromTs && $value < $fromTs) { $skip = true; break 2; }
+							}
+							if (!empty($filter['to'])) {
+								$toTs = strtotime($filter['to'] . ' 23:59:59');
+								if ($toTs && $value > $toTs) { $skip = true; break 2; }
+							}
+						}
+						break;
+
+					case 'select':
+						if ($column === 'status') {
+							if ($this->getWithdrawalStatusValue($item) !== (string)$filter['value']) { $skip = true; break 2; }
+						}
+						break;
+				}
+			}
+
+			if (!$skip) {
+				$filtered[] = $entry;
+			}
+		}
+
+		return $filtered;
+	}
+
 	protected function renderPaginationRow(int $total, int $perPage, int $currentPage, string $exportAction = 'export'): string {
 		$input = $this->wire('input');
 
@@ -1793,6 +2012,11 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			'products' => ['url' => $baseUrl . 'products/', 'label' => 'Products'],
 			'customers' => ['url' => $baseUrl . 'customers/', 'label' => 'Customers'],
 		];
+
+		// Withdrawals tab only when the main module provides the feature
+		if ($this->wire('fields')->get('spl_withdrawals')) {
+			$tabs['withdrawals'] = ['url' => $baseUrl . 'withdrawals/', 'label' => 'Withdrawals'];
+		}
 
 		$out = "<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:20px'>";
 
@@ -2677,6 +2901,349 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	}
 
 	/**
+	 * Withdrawals overview - one row per withdrawal request (spl_withdrawals
+	 * repeater item created by the StripePaymentLinks main module).
+	 */
+	public function ___executeWithdrawals(): string {
+		$this->headline($this->_('Withdrawals Overview'));
+		$this->browserTitle($this->_('Withdrawals'));
+
+		$out = $this->renderTabs('withdrawals');
+
+		if (!$this->wire('fields')->get('spl_withdrawals')) {
+			$out .= '<p>' . $this->_('The Withdrawals feature is not available. Update the StripePaymentLinks main module to enable it.') . '</p>';
+			return $out;
+		}
+
+		$input = $this->wire('input');
+		$users = $this->wire('users');
+
+		$columns = $this->withdrawalsColumns ?: self::getDefaults()['withdrawalsColumns'];
+		$perPage = (int)($this->itemsPerPage ?: 25);
+
+		$out .= $this->renderDynamicFilterForm($columns, 'withdrawals');
+
+		// Collect all withdrawals
+		$all = [];
+		foreach ($users->find("spl_withdrawals.count>0") as $user) {
+			foreach ($user->spl_withdrawals as $item) {
+				$all[] = [
+					'user' => $user,
+					'item' => $item,
+					'date' => (int)$item->get('spl_withdrawal_received_at'),
+				];
+			}
+		}
+
+		$all = $this->applyDynamicFilters($all, $columns, 'withdrawals');
+
+		// Sort by first selected column
+		$firstColumn = $columns[0] ?? 'received_at';
+		$descending = $this->shouldSortDescending($firstColumn);
+		usort($all, function($a, $b) use ($firstColumn, $descending) {
+			$valA = $this->getWithdrawalSortValue($a['user'], $a['item'], $firstColumn);
+			$valB = $this->getWithdrawalSortValue($b['user'], $b['item'], $firstColumn);
+			$cmp = $valA <=> $valB;
+			return $descending ? -$cmp : $cmp;
+		});
+
+		// Pagination
+		$total = count($all);
+		$page = max(1, (int)$input->get('pg'));
+		$offset = ($page - 1) * $perPage;
+		$paginated = array_slice($all, $offset, $perPage);
+
+		$out .= $this->renderWithdrawalsTable($paginated, $columns);
+		$out .= $this->renderPaginationRow($total, $perPage, $page, 'exportWithdrawals');
+		$out .= $this->renderTabInfoModal('withdrawals');
+
+		return $out;
+	}
+
+	/**
+	 * Export withdrawals to CSV
+	 */
+	public function ___executeExportWithdrawals(): void {
+		$users = $this->wire('users');
+
+		$columns = $this->withdrawalsColumns ?: self::getDefaults()['withdrawalsColumns'];
+
+		$all = [];
+		foreach ($users->find("spl_withdrawals.count>0") as $user) {
+			foreach ($user->spl_withdrawals as $item) {
+				$all[] = ['user' => $user, 'item' => $item];
+			}
+		}
+
+		$all = $this->applyDynamicFilters($all, $columns, 'withdrawals');
+
+		$firstColumn = $columns[0] ?? 'received_at';
+		$descending = $this->shouldSortDescending($firstColumn);
+		usort($all, function($a, $b) use ($firstColumn, $descending) {
+			$valA = $this->getWithdrawalSortValue($a['user'], $a['item'], $firstColumn);
+			$valB = $this->getWithdrawalSortValue($b['user'], $b['item'], $firstColumn);
+			$cmp = $valA <=> $valB;
+			return $descending ? -$cmp : $cmp;
+		});
+
+		header('Content-Type: text/csv; charset=utf-8');
+		header('Content-Disposition: attachment; filename="withdrawals-' . date('Y-m-d-His') . '.csv"');
+
+		$fp = fopen('php://output', 'w');
+
+		$headers = [];
+		$labels = $this->getWithdrawalColumnLabels();
+		foreach ($columns as $col) {
+			$headers[] = $labels[$col] ?? $this->availableWithdrawalsColumns[$col]['label'] ?? $col;
+		}
+		fputcsv($fp, $headers);
+
+		foreach ($all as $entry) {
+			$row = [];
+			foreach ($columns as $col) {
+				$row[] = trim(strip_tags($this->getWithdrawalColumnValue($entry['user'], $entry['item'], $col, false)));
+			}
+			fputcsv($fp, $row);
+		}
+
+		fclose($fp);
+		exit;
+	}
+
+	/**
+	 * AJAX endpoint: inline update of a single withdrawal's status or admin notes.
+	 * Expects POST: id (repeater item page id), field (status|admin_notes), value,
+	 * plus a valid ProcessWire CSRF token. Returns JSON.
+	 */
+	public function ___executeUpdateWithdrawal(): void {
+		$input     = $this->wire('input');
+		$session   = $this->wire('session');
+		$sanitizer = $this->wire('sanitizer');
+
+		header('Content-Type: application/json; charset=utf-8');
+
+		$respond = function(array $data, int $status = 200) {
+			http_response_code($status);
+			echo json_encode($data, JSON_UNESCAPED_UNICODE);
+			exit;
+		};
+
+		if (!$session->CSRF->hasValidToken()) {
+			$respond(['success' => false, 'error' => $this->_('Invalid or expired security token.')], 403);
+		}
+
+		$id    = (int)$input->post('id');
+		$field = $sanitizer->name((string)$input->post('field'));
+		$page  = $id ? $this->wire('pages')->get($id) : null;
+
+		if (!$page || !$page->id || !$page->hasField('spl_withdrawal_status')) {
+			$respond(['success' => false, 'error' => $this->_('Withdrawal not found.')], 404);
+		}
+
+		$page->of(false);
+
+		if ($field === 'status') {
+			$value = $sanitizer->option((string)$input->post('value'), array_keys($this->getWithdrawalStatusOptions()));
+			if ($value === null) {
+				$respond(['success' => false, 'error' => $this->_('Invalid status value.')], 422);
+			}
+			$page->set('spl_withdrawal_status', $value);
+		} elseif ($field === 'admin_notes') {
+			$page->set('spl_withdrawal_admin_notes', $sanitizer->textarea((string)$input->post('value')));
+		} else {
+			$respond(['success' => false, 'error' => $this->_('Unsupported field.')], 422);
+		}
+
+		try {
+			$page->save();
+		} catch (\Throwable $e) {
+			$respond(['success' => false, 'error' => $e->getMessage()], 500);
+		}
+
+		$respond(['success' => true]);
+	}
+
+	/**
+	 * Render the withdrawals table. Status and admin-notes columns are rendered
+	 * as inline-editable controls that save via the updateWithdrawal endpoint.
+	 */
+	protected function renderWithdrawalsTable(array $entries, array $columns): string {
+		if (empty($entries)) {
+			return "<p>" . $this->_('No withdrawals found.') . "</p>";
+		}
+
+		$table = $this->modules->get('MarkupAdminDataTable');
+		$table->setEncodeEntities(false);
+		$table->setSortable(true);
+
+		$labels = $this->getWithdrawalColumnLabels();
+		$headerRow = [];
+		foreach ($columns as $col) {
+			$headerRow[] = $labels[$col] ?? $this->availableWithdrawalsColumns[$col]['label'] ?? $col;
+		}
+		$table->headerRow($headerRow);
+
+		foreach ($entries as $entry) {
+			$row = [];
+			foreach ($columns as $col) {
+				$row[] = $this->getWithdrawalColumnValue($entry['user'], $entry['item'], $col, true);
+			}
+			$table->row($row);
+		}
+
+		$out = $table->render();
+
+		// Inline-edit JS only needed when an editable column is shown
+		if (in_array('status', $columns, true) || in_array('admin_notes', $columns, true)) {
+			$out .= $this->renderWithdrawalInlineEditScript();
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Compute the display value for a withdrawal column. When $editable is true,
+	 * status and admin_notes are returned as form controls instead of plain text.
+	 */
+	protected function getWithdrawalColumnValue(?User $user, Page $item, string $column, bool $editable = false): string {
+		$colDef = $this->availableWithdrawalsColumns[$column] ?? null;
+		if (!$colDef) return '';
+
+		$sanitizer = $this->wire('sanitizer');
+		$type = $colDef['type'] ?? 'text';
+
+		switch ($type) {
+			case 'date':
+				$ts = (int)$item->get($colDef['field']);
+				return $ts > 0 ? date('Y-m-d H:i', $ts) : '';
+
+			case 'email':
+				$email = (string)$item->get($colDef['field']);
+				return $email !== '' ? $this->renderUserEmail($email) : '';
+
+			case 'user_email':
+				if (!$user || !$user->id) {
+					return "<span class='uk-text-muted' style='color:#999'>" . $this->_('— no account —') . "</span>";
+				}
+				return $this->renderUserEmail((string)$user->email);
+
+			case 'bool':
+				return $item->get($colDef['field']) ? "<span style='color:#4caf50'><i class='fa fa-check'></i></span>" : '';
+
+			case 'linked':
+				$pid = (int)$item->get('spl_withdrawal_linked_purchase_id');
+				return $pid > 0 ? ('#' . $pid) : '';
+
+			case 'status':
+				$value   = $this->getWithdrawalStatusValue($item);
+				$options = $this->getWithdrawalStatusOptions();
+				if (!$editable) {
+					return $options[$value] ?? $value;
+				}
+				$out = "<select class='spl-wd-status' data-id='" . (int)$item->id . "' style='max-width:180px'>";
+				foreach ($options as $val => $label) {
+					$sel = ($val === $value) ? ' selected' : '';
+					$out .= "<option value='" . $sanitizer->entities($val) . "'{$sel}>" . $sanitizer->entities($label) . "</option>";
+				}
+				$out .= "</select> <span class='spl-wd-saved' data-id='" . (int)$item->id . "' style='display:none'><i class='fa fa-check'></i></span>";
+				return $out;
+
+			case 'notes':
+				$notes = (string)$item->get($colDef['field']);
+				if (!$editable) return $notes;
+				return "<textarea class='spl-wd-notes' data-id='" . (int)$item->id . "' rows='2' "
+					 . "style='width:100%;min-width:180px;font-size:12px' "
+					 . "placeholder='" . $sanitizer->entities($this->_('Add note…')) . "'>"
+					 . $sanitizer->entities($notes) . "</textarea>";
+
+			default:
+				$field = $colDef['field'] ?? '';
+				$val = $field ? (string)$item->get($field) : '';
+				if ($column === 'reason') {
+					return nl2br($sanitizer->entities($val));
+				}
+				return $sanitizer->entities($val);
+		}
+	}
+
+	/**
+	 * Sortable value for a withdrawal column.
+	 */
+	protected function getWithdrawalSortValue(?User $user, Page $item, string $column) {
+		$colDef = $this->availableWithdrawalsColumns[$column] ?? null;
+		$type = $colDef['type'] ?? 'text';
+
+		if ($type === 'date') return (int)$item->get($colDef['field']);
+		if ($column === 'status') return $this->getWithdrawalStatusValue($item);
+		if ($column === 'user_email') return $user ? mb_strtolower((string)$user->email) : '';
+		if ($type === 'bool') return (int)(bool)$item->get($colDef['field']);
+		if ($column === 'linked_purchase') return (int)$item->get('spl_withdrawal_linked_purchase_id');
+
+		$field = $colDef['field'] ?? '';
+		return $field ? mb_strtolower((string)$item->get($field)) : '';
+	}
+
+	/**
+	 * Inline-edit JavaScript for the withdrawals table (status select + notes).
+	 */
+	protected function renderWithdrawalInlineEditScript(): string {
+		$csrf       = $this->wire('session')->CSRF;
+		$tokenName  = $csrf->getTokenName();
+		$tokenValue = $csrf->getTokenValue();
+		$endpoint   = $this->page->url . 'updateWithdrawal/';
+
+		return <<<HTML
+<script>
+(function(){
+	var endpoint = '{$endpoint}';
+	var tokenName = '{$tokenName}';
+	var tokenValue = '{$tokenValue}';
+
+	function save(id, field, value, done){
+		var fd = new FormData();
+		fd.append('id', id);
+		fd.append('field', field);
+		fd.append('value', value);
+		fd.append(tokenName, tokenValue);
+		fetch(endpoint, {method:'POST', body:fd, credentials:'same-origin'})
+			.then(function(r){ return r.json(); })
+			.then(function(d){ done(!!(d && d.success)); })
+			.catch(function(){ done(false); });
+	}
+
+	document.addEventListener('change', function(e){
+		var sel = e.target.closest ? e.target.closest('.spl-wd-status') : null;
+		if(!sel) return;
+		var id = sel.getAttribute('data-id');
+		sel.disabled = true;
+		save(id, 'status', sel.value, function(ok){
+			sel.disabled = false;
+			var badge = document.querySelector('.spl-wd-saved[data-id="'+id+'"]');
+			if(badge){
+				badge.style.display = 'inline';
+				badge.style.color = ok ? '#4caf50' : '#e53935';
+				setTimeout(function(){ badge.style.display = 'none'; }, 1600);
+			}
+		});
+	});
+
+	document.addEventListener('blur', function(e){
+		var ta = e.target.closest ? e.target.closest('.spl-wd-notes') : null;
+		if(!ta) return;
+		if(ta.defaultValue === ta.value) return;
+		ta.defaultValue = ta.value;
+		ta.style.transition = 'outline .2s';
+		save(ta.getAttribute('data-id'), 'admin_notes', ta.value, function(ok){
+			ta.style.outline = ok ? '2px solid #4caf50' : '2px solid #e53935';
+			setTimeout(function(){ ta.style.outline = ''; }, 1200);
+		});
+	}, true);
+})();
+</script>
+HTML;
+	}
+
+	/**
 	 * AJAX endpoint: Render purchase details for a specific session
 	 */
 	public function ___executePurchaseDetails(): void {
@@ -3295,6 +3862,26 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 					[
 						'title' => $this->_('Segment by purchase behavior'),
 						'steps' => $this->_('Filter by "Total Purchases" to find one-time buyers vs. loyal repeat customers. Analyze differences in product preferences.')
+					]
+				];
+				break;
+
+			case 'withdrawals':
+				$title = $this->_('Withdrawals Tab – Right-of-Withdrawal Requests');
+				$description = $this->_('Shows electronic withdrawal (cancellation) requests submitted by consumers via the StripePaymentLinks frontend. Each row is one request.');
+				$totalExplanation = '<strong>' . $this->_('Tip:') . '</strong> ' . $this->_('Status and admin notes can be edited inline – changes are saved immediately. The status options mirror the main module: Received, Verified valid, Verified invalid, Completed.');
+				$examples = [
+					[
+						'title' => $this->_('Process new requests'),
+						'steps' => $this->_('Filter by Status = "Received" to see unprocessed requests. After checking validity, switch the status to "Verified valid" or "Verified invalid" directly in the table.')
+					],
+					[
+						'title' => $this->_('Match a request to a purchase'),
+						'steps' => $this->_('The "Linked Purchase" column shows the purchase the main module matched automatically (by order/session ID or order date). Use the search box to find requests by consumer email or product.')
+					],
+					[
+						'title' => $this->_('Keep an audit trail'),
+						'steps' => $this->_('Add private remarks in the "Admin Notes" column. The "Receipt Sent" column confirms the consumer received the confirmation mail.')
 					]
 				];
 				break;
