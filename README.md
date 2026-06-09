@@ -1,6 +1,6 @@
 # Stripe Payment Links Admin (StripePlAdmin)
 
-A ProcessWire module that provides a comprehensive admin interface for viewing and analyzing customer purchases from Stripe Payment Links in three different perspectives: Purchases, Products, and Customers.
+A ProcessWire module that provides a comprehensive admin interface for viewing and analyzing customer purchases from Stripe Payment Links in four different perspectives: Purchases, Products, Customers, and Withdrawals. Stripe checkout custom fields collected from customers are surfaced directly in the admin, so operators no longer need to look them up in Stripe.
 
 ## Why This Module Was Built
 
@@ -23,6 +23,11 @@ Customers with multiple active Stripe accounts wanted a better, more complete ov
 
 *Customer lifetime value analysis with revenue filter (min. €1000). Shows total purchases, revenue, first purchase date, and last activity per customer. Click on names or purchase count to view detailed purchase history.*
 
+### Withdrawals Tab
+![Withdrawals Overview](screenshots/withdrawals-overview.png)
+
+*Right-of-withdrawal (cancellation) requests submitted by consumers via the `StripePaymentLinks` frontend. Filterable by status, received date, and free-text search. Consumer names and emails link to the user account. The status and admin notes columns are editable inline — changes are saved immediately. Shown only when the main module provides the withdrawals feature.*
+
 ### Purchase Details Modal
 ![Purchase Details Modal](screenshots/purchase-details.png)
 
@@ -35,11 +40,12 @@ Customers with multiple active Stripe accounts wanted a better, more complete ov
 
 ## What It Does
 
-This module displays Stripe purchase data stored by the `StripePaymentLinks` module in three configurable views:
+This module displays Stripe purchase data stored by the `StripePaymentLinks` module in four configurable views:
 
 - **Purchases Tab**: Transaction history with customer and payment details
 - **Products Tab**: Aggregated product performance and revenue metrics
 - **Customers Tab**: Customer lifetime value and purchase behavior analysis
+- **Withdrawals Tab**: Right-of-withdrawal requests with inline-editable status and admin notes (shown when the main module provides the feature)
 
 Each view offers:
 - Configurable columns and filters
@@ -48,6 +54,8 @@ Each view offers:
 - Interactive modals for detailed information
 - CSV export functionality
 - Statistical totals and summaries
+
+In addition, the **Custom Fields** column on the Purchases tab shows the Stripe checkout custom fields collected from each customer (e.g. a preferred date, a child's name and age) as `Label: Value` pairs — included in CSV export and searchable.
 
 ## Requirements
 
@@ -66,8 +74,8 @@ Each view offers:
 
 Navigate to **Admin > Setup > Modules > Configure > Stripe PL Admin**:
 
-- **Purchases/Products/Customers Columns**: Select which columns to display
-- **Purchases/Products/Customers Filters**: Enable filters for each view
+- **Purchases/Products/Customers/Withdrawals Columns**: Select which columns to display (the Purchases columns include the **Custom Fields** column)
+- **Purchases/Products/Customers/Withdrawals Filters**: Enable filters for each view
 - **Items Per Page**: Set pagination (default: 25, max: 1000)
 
 ## Usage Examples
@@ -128,9 +136,16 @@ Use the search functionality with boolean operators:
 ## Key Features
 
 **Data Views:**
-- Three perspectives: Purchases, Products, Customers
+- Four perspectives: Purchases, Products, Customers, Withdrawals
 - Configurable columns per view
 - Sortable by any column
+- Stripe checkout custom fields surfaced on the Purchases tab (and in the purchase details modal)
+
+**Withdrawals Management:**
+- Lists right-of-withdrawal requests stored by the main module
+- Filter by status, received date, and free-text search
+- Inline-editable status and admin notes (saved immediately via AJAX)
+- Consumer name/email link to the user account
 
 **Filtering & Search:**
 - Boolean search (AND/OR, quoted phrases, + prefix)
@@ -161,14 +176,14 @@ Use the search functionality with boolean operators:
 This module is a **viewing and analysis tool** that reads purchase data stored by the `StripePaymentLinks` module:
 
 1. `StripePaymentLinks` module handles Stripe API integration via webhooks
-2. Purchase data is stored in ProcessWire user fields (`spl_purchases`)
+2. Purchase data is stored in ProcessWire user fields (`spl_purchases`), withdrawal requests in `spl_withdrawals`
 3. This module reads that data and provides advanced viewing/analysis capabilities
 
 **Important**: This module does not make direct Stripe API calls. Data is as current as the last webhook sync from Stripe.
 
 ## Version
 
-1.1.0 (December 2025)
+1.1.0 (June 2026)
 
 ## Author
 
