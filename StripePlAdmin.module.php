@@ -3159,6 +3159,11 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			default:
 				$field = $colDef['field'] ?? '';
 				$val = $field ? (string)$item->get($field) : '';
+				// Link the consumer name to its user account, like Purchases/Customers
+				// (only in the table view; CSV export keeps the plain name)
+				if ($column === 'name' && $editable && $user && $user->id && $val !== '') {
+					return $this->renderCustomerName($sanitizer->entities($val), $user->id);
+				}
 				if ($column === 'reason') {
 					return nl2br($sanitizer->entities($val));
 				}
