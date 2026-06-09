@@ -2093,14 +2093,14 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$configUrl = $this->wire('config')->urls->admin . 'module/edit/?name=' . $this->className();
 
 		$tabs = [
-			'purchases' => ['url' => $baseUrl, 'label' => 'Purchases'],
-			'products' => ['url' => $baseUrl . 'products/', 'label' => 'Products'],
-			'customers' => ['url' => $baseUrl . 'customers/', 'label' => 'Customers'],
+			'purchases' => ['url' => $baseUrl, 'label' => $this->_('Purchases')],
+			'products' => ['url' => $baseUrl . 'products/', 'label' => $this->_('Products')],
+			'customers' => ['url' => $baseUrl . 'customers/', 'label' => $this->_('Customers')],
 		];
 
 		// Withdrawals tab only when the main module provides the feature
 		if ($this->wire('fields')->get('spl_withdrawals')) {
-			$tabs['withdrawals'] = ['url' => $baseUrl . 'withdrawals/', 'label' => 'Withdrawals'];
+			$tabs['withdrawals'] = ['url' => $baseUrl . 'withdrawals/', 'label' => $this->_('Withdrawals')];
 		}
 
 		$out = "<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:20px'>";
@@ -2114,8 +2114,8 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$out .= "</ul>";
 
 		$out .= "<div style='display:flex;gap:15px'>";
-		$out .= "<a href='#' class='ui-link show-tab-info' data-tab='{$active}'><i class='fa fa-info-circle'></i> Info</a>";
-		$out .= "<a href='{$configUrl}&collapse_info=1' class='ui-link'><i class='fa fa-cog'></i> Columns</a>";
+		$out .= "<a href='#' class='ui-link show-tab-info' data-tab='{$active}'><i class='fa fa-info-circle'></i> " . $this->_('Info') . "</a>";
+		$out .= "<a href='{$configUrl}&collapse_info=1' class='ui-link'><i class='fa fa-cog'></i> " . $this->_('Columns') . "</a>";
 		$out .= "</div>";
 
 		$out .= "</div>";
