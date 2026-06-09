@@ -1022,8 +1022,10 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	}
 
 	/**
-	 * Compute the Custom Fields column: "Label: Value" pairs separated by " | ".
-	 * The separator survives strip_tags() so the CSV export stays readable.
+	 * Compute the Custom Fields column: one "Label: Value" pair per line.
+	 * Each pair is separated by "<br>\n" so the table shows line breaks while
+	 * the newline survives strip_tags(), keeping the CSV export readable
+	 * (multi-line cell).
 	 */
 	protected function computeCustomFields(User $user, Page $item): string {
 		$pairs = $this->extractCustomFields($item);
@@ -1035,7 +1037,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			$value = htmlspecialchars($p['value'], ENT_QUOTES);
 			$parts[] = "<strong>{$label}:</strong> {$value}";
 		}
-		return implode(' | ', $parts);
+		return implode("<br>\n", $parts);
 	}
 
 	/**
