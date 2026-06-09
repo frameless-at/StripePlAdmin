@@ -49,6 +49,9 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		'product_ids'       => ['label' => 'Product IDs', 'type' => 'meta_array', 'key' => 'product_ids'],
 		'product_titles'    => ['label' => 'Product Titles', 'type' => 'computed', 'compute' => 'computeProductTitles'],
 
+		// Stripe checkout custom fields (collected from the customer at checkout)
+		'custom_fields'     => ['label' => 'Custom Fields', 'type' => 'computed', 'compute' => 'computeCustomFields'],
+
 		// Subscription status
 		'subscription_status' => ['label' => 'Subscription Status', 'type' => 'computed', 'compute' => 'computeSubscriptionStatus'],
 		'period_end'        => ['label' => 'Period End', 'type' => 'computed', 'compute' => 'computePeriodEnd'],
@@ -66,7 +69,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	 */
 	public static function getDefaults(): array {
 		return [
-			'purchasesColumns' => ['user_email', 'purchase_date', 'product_titles', 'amount_total'],
+			'purchasesColumns' => ['user_email', 'purchase_date', 'product_titles', 'custom_fields', 'amount_total'],
 			'productsColumns' => ['name', 'purchases', 'quantity', 'revenue', 'last_purchase'],
 			'customersColumns' => ['name', 'email', 'total_purchases', 'total_revenue', 'first_purchase', 'last_activity'],
 			'purchasesFilters' => ['user_email', 'user_name', 'purchase_date', 'product_titles', 'amount_total'],
@@ -97,6 +100,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			'shipping_address' => $this->_('Shipping Address'),
 			'product_ids' => $this->_('Product IDs'),
 			'product_titles' => $this->_('Product Titles'),
+			'custom_fields' => $this->_('Custom Fields'),
 			'subscription_status' => $this->_('Subscription Status'),
 			'period_end' => $this->_('Period End'),
 			'line_items_count' => $this->_('Items Count'),
@@ -963,6 +967,78 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	}
 
 	/**
+	 * Extract the Stripe checkout custom fields stored in the purchase's
+	 * stripe_session meta. Returns a list of ['key', 'label', 'value'].
+	 *
+	 * Stripe stores each custom field as:
+	 *   ['key' => '...', 'label' => ['type' => 'custom', 'custom' => 'Label'],
+	 *    'type' => 'text|numeric|dropdown', '<type>' => ['value' => '...']]
+	 * For dropdowns the stored value is mapped back to its option label.
+	 */
+	protected function extractCustomFields(Page $item): array {
+		$session = (array)$item->meta('stripe_session');
+		$fields = $session['custom_fields'] ?? [];
+		if (!is_array($fields)) return [];
+
+		$result = [];
+		foreach ($fields as $f) {
+			if (!is_array($f)) continue;
+
+			$key = (string)($f['key'] ?? '');
+
+			// Label: prefer the custom label, fall back to the key
+			$label = '';
+			if (isset($f['label'])) {
+				$label = is_array($f['label']) ? (string)($f['label']['custom'] ?? '') : (string)$f['label'];
+			}
+			if ($label === '') $label = $key;
+
+			// Value lives under the field's type key (text|numeric|dropdown)
+			$type = (string)($f['type'] ?? '');
+			$value = '';
+			if ($type !== '' && isset($f[$type]) && is_array($f[$type])) {
+				$value = (string)($f[$type]['value'] ?? '');
+			} else {
+				foreach (['text', 'numeric', 'dropdown'] as $t) {
+					if (isset($f[$t]['value'])) { $value = (string)$f[$t]['value']; break; }
+				}
+			}
+
+			// Map dropdown value to its human-readable option label
+			if ($type === 'dropdown' && isset($f['dropdown']['options']) && is_array($f['dropdown']['options'])) {
+				foreach ($f['dropdown']['options'] as $opt) {
+					if (is_array($opt) && (string)($opt['value'] ?? '') === $value && isset($opt['label'])) {
+						$value = (string)$opt['label'];
+						break;
+					}
+				}
+			}
+
+			if ($label === '' && $value === '') continue;
+			$result[] = ['key' => $key, 'label' => $label, 'value' => $value];
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Compute the Custom Fields column: "Label: Value" pairs separated by " | ".
+	 * The separator survives strip_tags() so the CSV export stays readable.
+	 */
+	protected function computeCustomFields(User $user, Page $item): string {
+		$pairs = $this->extractCustomFields($item);
+		if (empty($pairs)) return '';
+
+		$parts = [];
+		foreach ($pairs as $p) {
+			$label = htmlspecialchars($p['label'], ENT_QUOTES);
+			$value = htmlspecialchars($p['value'], ENT_QUOTES);
+			$parts[] = "<strong>{$label}:</strong> {$value}";
+		}
+		return implode(' | ', $parts);
+	}
+
+	/**
 	 * Check if a purchase contains subscription products
 	 */
 	protected function hasSubscriptionProducts(Page $item): bool {
@@ -1612,7 +1688,14 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 					}
 				}
 
-				$matchFound = $this->matchesSearchQueryMultiple(array_merge([$userEmail, $userName], $productNames), $searchTerms);
+				// Also search within custom field values (e.g. child name, preferred date)
+				$customValues = [];
+				foreach ($this->extractCustomFields($item) as $cf) {
+					if ($cf['value'] !== '') $customValues[] = $cf['value'];
+					if ($cf['label'] !== '') $customValues[] = $cf['label'];
+				}
+
+				$matchFound = $this->matchesSearchQueryMultiple(array_merge([$userEmail, $userName], $productNames, $customValues), $searchTerms);
 				if (!$matchFound) continue;
 			}
 
@@ -3362,6 +3445,21 @@ HTML;
 			echo '<td>' . $this->formatPrice($grandTotal, $currency) . '</td>';
 			echo '</tr>';
 
+			echo '</tbody></table>';
+		}
+
+		// Custom fields collected at Stripe checkout
+		$customFields = $this->extractCustomFields($foundPurchase);
+		if (!empty($customFields)) {
+			echo '<h4 style="margin-top:20px">' . $this->_('Custom Fields') . '</h4>';
+			echo '<table class="uk-table uk-table-small uk-table-divider">';
+			echo '<tbody>';
+			foreach ($customFields as $cf) {
+				echo '<tr>';
+				echo '<th style="width:40%">' . htmlspecialchars($cf['label'], ENT_QUOTES) . '</th>';
+				echo '<td>' . nl2br(htmlspecialchars($cf['value'], ENT_QUOTES)) . '</td>';
+				echo '</tr>';
+			}
 			echo '</tbody></table>';
 		}
 
