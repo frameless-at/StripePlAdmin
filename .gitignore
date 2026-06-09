@@ -1,0 +1,9 @@
+# ProcessWire core – nur als lokale Referenz, nicht Teil dieses Repos
+/processwire-3.0.246/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
