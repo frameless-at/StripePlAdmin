@@ -170,11 +170,11 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	 */
 	protected array $availableWithdrawalsColumns = [
 		'received_at'       => ['label' => 'Received At', 'field' => 'spl_withdrawal_received_at', 'type' => 'date'],
-		'name'              => ['label' => 'Consumer Name', 'field' => 'spl_withdrawal_name'],
-		'email'             => ['label' => 'Consumer Email', 'field' => 'spl_withdrawal_email', 'type' => 'email'],
+		'name'              => ['label' => 'Name', 'field' => 'spl_withdrawal_name'],
+		'email'             => ['label' => 'Email', 'field' => 'spl_withdrawal_email', 'type' => 'email'],
 		'user_email'        => ['label' => 'User Account', 'type' => 'user_email'],
 		'product'           => ['label' => 'Product', 'field' => 'spl_withdrawal_product'],
-		'order_id'          => ['label' => 'Order / Session ID', 'field' => 'spl_withdrawal_order_id'],
+		'order_id'          => ['label' => 'Order ID', 'field' => 'spl_withdrawal_order_id'],
 		'order_date'        => ['label' => 'Order Date', 'field' => 'spl_withdrawal_order_date', 'type' => 'date'],
 		'reason'            => ['label' => 'Reason', 'field' => 'spl_withdrawal_reason'],
 		'status'            => ['label' => 'Status', 'type' => 'status'],
@@ -189,11 +189,11 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	protected function getWithdrawalColumnLabels(): array {
 		return [
 			'received_at'       => $this->_('Received At'),
-			'name'              => $this->_('Consumer Name'),
-			'email'             => $this->_('Consumer Email'),
+			'name'              => $this->_('Name'),
+			'email'             => $this->_('Email'),
 			'user_email'        => $this->_('User Account'),
 			'product'           => $this->_('Product'),
-			'order_id'          => $this->_('Order / Session ID'),
+			'order_id'          => $this->_('Order ID'),
 			'order_date'        => $this->_('Order Date'),
 			'reason'            => $this->_('Reason'),
 			'status'            => $this->_('Status'),
@@ -237,10 +237,10 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		return [
 			'status'      => $this->_('Status'),
 			'received_at' => $this->_('Received At'),
-			'email'       => $this->_('Consumer Email'),
-			'name'        => $this->_('Consumer Name'),
+			'email'       => $this->_('Email'),
+			'name'        => $this->_('Name'),
 			'product'     => $this->_('Product'),
-			'order_id'    => $this->_('Order / Session ID'),
+			'order_id'    => $this->_('Order ID'),
 		];
 	}
 
