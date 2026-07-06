@@ -57,6 +57,14 @@ Each view offers:
 
 In addition, the **Custom Fields** column on the Purchases tab shows the Stripe checkout custom fields collected from each customer (e.g. a preferred date, a child's name and age) as `Label: Value` pairs — included in CSV export and searchable.
 
+### Log in as a customer (impersonation)
+
+Each customer row has a **“log in as”** icon (superuser only, and never another superuser). It
+starts an impersonation session and sends you to the customer’s front-end `/account/` view, so
+you see exactly what they see. A fixed banner (“Signed in as X — Return to admin”) stays on every
+page until you click **Return to admin**. The session switch, banner and audit logging live in the
+`StripePaymentLinks` core; start and stop are recorded to the *security* log channel.
+
 ## Requirements
 
 - ProcessWire 3.x or higher
