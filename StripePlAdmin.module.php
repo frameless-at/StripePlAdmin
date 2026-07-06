@@ -843,7 +843,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	}
 
 	/**
-	 * "Log in as" button for the customer table's own action column. Never offers to impersonate a
+	 * "View as User" button for the customer table's own action column. Never offers to impersonate a
 	 * superuser; column-level superuser gating is done by executeCustomers().
 	 */
 	protected function impersonateButton(User $target): string {
