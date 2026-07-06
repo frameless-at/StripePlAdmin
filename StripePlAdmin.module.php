@@ -851,7 +851,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		$token = $this->wire('session')->CSRF->getTokenValue();
 		$url   = $this->wire('sanitizer')->entities($this->page->url . 'impersonate/?user=' . $target->id . '&token=' . urlencode($token));
 		return "<a href='{$url}' class='uk-button uk-button-default uk-button-small' title='"
-			 . $this->_('Log in as this customer') . "'><i class='fa fa-sign-in'></i> " . $this->_('Log in as') . "</a>";
+			 . $this->_('View the site as this customer') . "'><i class='fa fa-eye'></i> " . $this->_('View') . "</a>";
 	}
 
 	/**
@@ -2819,7 +2819,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			foreach ($columns as $col) {
 				$headers[] = $customerLabels[$col] ?? $this->availableCustomersColumns[$col]['label'] ?? $col;
 			}
-			if ($canImpersonate) $headers[] = $this->_('Log in as');
+			if ($canImpersonate) $headers[] = $this->_('View as User');
 			$table->headerRow($headers);
 
 			// Calculate sums from ALL customers (not just paginated)
