@@ -839,7 +839,44 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	protected function renderCustomerName(string $customerName, int $userId): string {
 		if (!$customerName) return '';
 		$editUrl = $this->wire('config')->urls->admin . "access/users/edit/?id={$userId}";
-		return "<a href='{$editUrl}'>{$customerName}</a>";
+		return "<a href='{$editUrl}'>{$customerName}</a>" . $this->impersonateLink($userId);
+	}
+
+	/**
+	 * "Log in as" link for a customer row (superuser only, never another superuser).
+	 * Triggers ___executeImpersonate(), which calls the SPL core impersonate() and redirects
+	 * the admin to the front-end account view as that user.
+	 */
+	protected function impersonateLink(int $userId): string {
+		if (!$this->wire('user')->isSuperuser()) return '';
+		$target = $this->wire('users')->get($userId);
+		if (!$target || !$target->id || $target->isSuperuser()) return '';
+		$token = $this->wire('session')->CSRF->getTokenValue();
+		$url   = $this->wire('sanitizer')->entities($this->page->url . 'impersonate/?user=' . $userId . '&token=' . urlencode($token));
+		return " <a href='{$url}' class='spl-impersonate' title='Log in as this user' style='margin-left:6px'><i class='fa fa-user-secret'></i></a>";
+	}
+
+	/**
+	 * Sub-action: start impersonating a customer. Superuser + CSRF guarded; the session switch,
+	 * banner, audit log and return are handled by the SPL core.
+	 */
+	public function ___executeImpersonate(): void {
+		$session = $this->wire('session');
+		$config  = $this->wire('config');
+		if (!$this->wire('user')->isSuperuser()) { $session->redirect($this->page->url, false); return; }
+		$token = $this->wire('input')->get->text('token');
+		if ($token === '' || !hash_equals((string) $session->CSRF->getTokenValue(), $token)) {
+			$session->redirect($this->page->url, false); return;
+		}
+		$target = $this->wire('users')->get((int) $this->wire('input')->get('user'));
+		$acct   = $this->wire('pages')->get('template=spl_account, include=all');
+		$dest   = ($acct && $acct->id) ? $acct->url : ($config->urls->root . 'account/');
+		$spl    = $this->wire('modules')->get('StripePaymentLinks');
+		if ($target && $target->id && method_exists($spl, 'impersonate') && $spl->impersonate($target)) {
+			$session->redirect($dest, false);
+			return;
+		}
+		$session->redirect($this->page->url, false);
 	}
 
 	/**
