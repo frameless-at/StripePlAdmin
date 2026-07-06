@@ -849,7 +849,9 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	protected function impersonateButton(User $target): string {
 		if (!$target || !$target->id || $target->isSuperuser()) return '';
 		$token = $this->wire('session')->CSRF->getTokenValue();
-		$url   = $this->wire('sanitizer')->entities($this->page->url . 'impersonate/?user=' . $target->id . '&token=' . urlencode($token));
+		// Capture where the admin currently is, so 'Return to admin' comes back here (not hardcoded).
+		$return = urlencode($this->wire('input')->url());
+		$url    = $this->wire('sanitizer')->entities($this->page->url . 'impersonate/?user=' . $target->id . '&token=' . urlencode($token) . '&return=' . $return);
 		// Each $this->_() must sit on its own line: ProcessWire's translation parser extracts only
 		// the FIRST translatable call per line (its regex swallows the rest of the line to EOL).
 		$title = $this->_('View the site as this customer');
@@ -875,6 +877,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			$session->redirect($backUrl, false); return;
 		}
 		$userId = (int) $this->wire('input')->get('user');
+		$return = (string) $this->wire('input')->get->text('return');
 		$target = $this->wire('users')->get($userId);
 		$spl    = $this->wire('modules')->get('StripePaymentLinks');
 		if (!$target || !$target->id) {
@@ -887,7 +890,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		}
 		$acct = $this->wire('pages')->get('template=spl_account, include=all');
 		$dest = ($acct && $acct->id) ? $acct->url : $config->urls->root;
-		if (!$spl->impersonate($target)) {
+		if (!$spl->impersonate($target, $return)) {
 			$log->save('security', "SPLAdmin impersonate: core refused user $userId (superuser target, or caller not a superuser) - see the core's own security log line");
 			$session->redirect($backUrl, false); return;
 		}
