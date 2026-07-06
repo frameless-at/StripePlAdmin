@@ -850,8 +850,12 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		if (!$target || !$target->id || $target->isSuperuser()) return '';
 		$token = $this->wire('session')->CSRF->getTokenValue();
 		$url   = $this->wire('sanitizer')->entities($this->page->url . 'impersonate/?user=' . $target->id . '&token=' . urlencode($token));
-		return "<a href='{$url}' class='uk-button uk-button-default uk-button-small' title='"
-			 . $this->_('View the site as this customer') . "'><i class='fa fa-eye'></i> " . $this->_('View') . "</a>";
+		// Each $this->_() must sit on its own line: ProcessWire's translation parser extracts only
+		// the FIRST translatable call per line (its regex swallows the rest of the line to EOL).
+		$title = $this->_('View the site as this customer');
+		$label = $this->_('View');
+		return "<a href='{$url}' class='uk-button uk-button-default uk-button-small' title='{$title}'>"
+			 . "<i class='fa fa-eye'></i> {$label}</a>";
 	}
 
 	/**
