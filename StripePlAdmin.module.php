@@ -877,8 +877,8 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 			$log->save('security', "SPLAdmin impersonate: user $userId not found");
 			$session->redirect($backUrl, false); return;
 		}
-		if (!method_exists($spl, 'impersonate')) {
-			$log->save('security', 'SPLAdmin impersonate: core StripePaymentLinks has no impersonate() - the core module is not deployed with the impersonation feature');
+		if (!method_exists($spl, '___impersonate')) {
+			$log->save('security', 'SPLAdmin impersonate: core StripePaymentLinks has no ___impersonate() (update the core module)');
 			$session->redirect($backUrl, false); return;
 		}
 		$acct = $this->wire('pages')->get('template=spl_account, include=all');
