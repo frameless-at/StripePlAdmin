@@ -872,14 +872,22 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 		}
 		$userId = (int) $this->wire('input')->get('user');
 		$target = $this->wire('users')->get($userId);
-		$acct   = $this->wire('pages')->get('template=spl_account, include=all');
-		$dest   = ($acct && $acct->id) ? $acct->url : $config->urls->root;
 		$spl    = $this->wire('modules')->get('StripePaymentLinks');
-		if (!$target || !$target->id || !method_exists($spl, 'impersonate') || !$spl->impersonate($target)) {
-			$log->save('security', "SPLAdmin impersonate failed for user $userId");
+		if (!$target || !$target->id) {
+			$log->save('security', "SPLAdmin impersonate: user $userId not found");
 			$session->redirect($backUrl, false); return;
 		}
-		$log->save('security', "SPLAdmin impersonate: redirecting to $dest");
+		if (!method_exists($spl, 'impersonate')) {
+			$log->save('security', 'SPLAdmin impersonate: core StripePaymentLinks has no impersonate() - the core module is not deployed with the impersonation feature');
+			$session->redirect($backUrl, false); return;
+		}
+		$acct = $this->wire('pages')->get('template=spl_account, include=all');
+		$dest = ($acct && $acct->id) ? $acct->url : $config->urls->root;
+		if (!$spl->impersonate($target)) {
+			$log->save('security', "SPLAdmin impersonate: core refused user $userId (superuser target, or caller not a superuser) - see the core's own security log line");
+			$session->redirect($backUrl, false); return;
+		}
+		$log->save('security', "SPLAdmin impersonate: user $userId -> redirecting to $dest");
 		$session->redirect($dest, false);
 	}
 
