@@ -59,9 +59,9 @@ In addition, the **Custom Fields** column on the Purchases tab shows the Stripe 
 
 ### Log in as a customer (impersonation)
 
-Each customer row has a **“log in as”** icon (superuser only, and never another superuser). It
-starts an impersonation session and sends you to the customer’s front-end `/account/` view, so
-you see exactly what they see. A fixed banner (“Signed in as X — Return to admin”) stays on every
+The **Customers** tab has its own **“Log in as”** column (superuser only; never another
+superuser). Clicking it starts an impersonation session and sends you to the customer’s front-end
+account page — or the site home if the install has none — so you see exactly what they see. A fixed banner (“Signed in as X — Return to admin”) stays on every
 page until you click **Return to admin**. The session switch, banner and audit logging live in the
 `StripePaymentLinks` core; start and stop are recorded to the *security* log channel.
 

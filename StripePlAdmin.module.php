@@ -839,44 +839,48 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 	protected function renderCustomerName(string $customerName, int $userId): string {
 		if (!$customerName) return '';
 		$editUrl = $this->wire('config')->urls->admin . "access/users/edit/?id={$userId}";
-		return "<a href='{$editUrl}'>{$customerName}</a>" . $this->impersonateLink($userId);
+		return "<a href='{$editUrl}'>{$customerName}</a>";
 	}
 
 	/**
-	 * "Log in as" link for a customer row (superuser only, never another superuser).
-	 * Triggers ___executeImpersonate(), which calls the SPL core impersonate() and redirects
-	 * the admin to the front-end account view as that user.
+	 * "Log in as" button for the customer table's own action column. Never offers to impersonate a
+	 * superuser; column-level superuser gating is done by executeCustomers().
 	 */
-	protected function impersonateLink(int $userId): string {
-		if (!$this->wire('user')->isSuperuser()) return '';
-		$target = $this->wire('users')->get($userId);
+	protected function impersonateButton(User $target): string {
 		if (!$target || !$target->id || $target->isSuperuser()) return '';
 		$token = $this->wire('session')->CSRF->getTokenValue();
-		$url   = $this->wire('sanitizer')->entities($this->page->url . 'impersonate/?user=' . $userId . '&token=' . urlencode($token));
-		return " <a href='{$url}' class='spl-impersonate' title='Log in as this user' style='margin-left:6px'><i class='fa fa-user-secret'></i></a>";
+		$url   = $this->wire('sanitizer')->entities($this->page->url . 'impersonate/?user=' . $target->id . '&token=' . urlencode($token));
+		return "<a href='{$url}' class='uk-button uk-button-default uk-button-small' title='"
+			 . $this->_('Log in as this customer') . "'><i class='fa fa-sign-in'></i> " . $this->_('Log in as') . "</a>";
 	}
 
 	/**
 	 * Sub-action: start impersonating a customer. Superuser + CSRF guarded; the session switch,
-	 * banner, audit log and return are handled by the SPL core.
+	 * banner, audit log and return live in the SPL core. Lands on the customer's account page if
+	 * the front-end has one, otherwise the site home (the banner shows on every page).
 	 */
 	public function ___executeImpersonate(): void {
 		$session = $this->wire('session');
 		$config  = $this->wire('config');
-		if (!$this->wire('user')->isSuperuser()) { $session->redirect($this->page->url, false); return; }
+		$log     = $this->wire('log');
+		$backUrl = $this->page->url;
+		if (!$this->wire('user')->isSuperuser()) { $log->save('security', 'SPLAdmin impersonate refused: not a superuser'); $session->redirect($backUrl, false); return; }
 		$token = $this->wire('input')->get->text('token');
 		if ($token === '' || !hash_equals((string) $session->CSRF->getTokenValue(), $token)) {
-			$session->redirect($this->page->url, false); return;
+			$log->save('security', 'SPLAdmin impersonate refused: invalid CSRF token');
+			$session->redirect($backUrl, false); return;
 		}
-		$target = $this->wire('users')->get((int) $this->wire('input')->get('user'));
+		$userId = (int) $this->wire('input')->get('user');
+		$target = $this->wire('users')->get($userId);
 		$acct   = $this->wire('pages')->get('template=spl_account, include=all');
-		$dest   = ($acct && $acct->id) ? $acct->url : ($config->urls->root . 'account/');
+		$dest   = ($acct && $acct->id) ? $acct->url : $config->urls->root;
 		$spl    = $this->wire('modules')->get('StripePaymentLinks');
-		if ($target && $target->id && method_exists($spl, 'impersonate') && $spl->impersonate($target)) {
-			$session->redirect($dest, false);
-			return;
+		if (!$target || !$target->id || !method_exists($spl, 'impersonate') || !$spl->impersonate($target)) {
+			$log->save('security', "SPLAdmin impersonate failed for user $userId");
+			$session->redirect($backUrl, false); return;
 		}
-		$session->redirect($this->page->url, false);
+		$log->save('security', "SPLAdmin impersonate: redirecting to $dest");
+		$session->redirect($dest, false);
 	}
 
 	/**
@@ -2802,10 +2806,12 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 
 			// Dynamic header
 			$headers = [];
+			$canImpersonate = $this->wire('user')->isSuperuser();
 			$customerLabels = $this->getCustomerColumnLabels();
 			foreach ($columns as $col) {
 				$headers[] = $customerLabels[$col] ?? $this->availableCustomersColumns[$col]['label'] ?? $col;
 			}
+			if ($canImpersonate) $headers[] = $this->_('Log in as');
 			$table->headerRow($headers);
 
 			// Calculate sums from ALL customers (not just paginated)
@@ -2868,6 +2874,7 @@ class StripePlAdmin extends Process implements Module, ConfigurableModule {
 							$row[] = '';
 					}
 				}
+				if ($canImpersonate) $row[] = $this->impersonateButton($data['user']);
 				$table->row($row);
 			}
 
